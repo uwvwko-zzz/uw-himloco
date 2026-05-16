@@ -1,0 +1,309 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# Copyright (c) 2021 ETH Zurich, Nikita Rudin
+
+from .base_config import BaseConfig
+
+class LeggedRobotCfg(BaseConfig):
+    class env:
+        num_envs = 4096                                     # go2 3700的环境启动
+        # num_envs = 3900
+        # num_envs = 100
+        num_one_step_observations = 46      # 单次观测维度+高度命令
+        # num_one_step_observations = 45
+
+        num_observations = num_one_step_observations * 6        # 总观测维度（加上5个历史观测的堆叠）
+        num_one_step_privileged_obs = 46 + 3 + 3 + 187          # 单步特权观测数量（额外包括基线速度、外力、扫描点等）
+        # num_one_step_privileged_obs = 45 + 3 + 3 + 187          # 单步特权观测数量（额外包括基线速度、外力、扫描点等）
+        
+        num_privileged_obs = num_one_step_privileged_obs * 1    # 总特权观测数量
+        num_actions = 12                                        # 动作数量
+        env_spacing = 3.                                        # 环境间距，在高度场和三角里面没用
+        send_timeouts = True                                    # 是否发送超时信息给算法
+        episode_length_s = 20 # episode length in seconds
+
+    class terrain:
+        mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
+        # mesh_type = 'plane'
+        horizontal_scale = 0.1      # 水平缩放比例   [m]
+        vertical_scale = 0.005      # 垂直缩放比例   [m]
+        border_size = 25            # 边界大小      [m]
+        curriculum = True
+        static_friction = 1.0       # 静摩擦系数
+        dynamic_friction = 1.0      # 动摩擦系数
+        restitution = 0.            # 恢复系数（弹性）
+        # rough terrain only:
+        measure_heights = True      # 是否测量高度 （算是这套框架的一个重点了）
+        # 分别是x,y轴的测量点
+        measured_points_x = [-0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] # 1mx1.6m rectangle (without center line)
+        measured_points_y = [-0.5, -0.4, -0.3, -0.2, -0.1, 0., 0.1, 0.2, 0.3, 0.4, 0.5]
+        selected = False #          # 是否选择特定地形，传递所有参数
+        terrain_kwargs = None       # 选择地形的参数字典
+        max_init_terrain_level = 5  # 初始课程学习状态的最大地形级别
+        # 地形的长宽
+        terrain_length = 8.
+        terrain_width = 8.
+        # 地形行列
+        num_rows= 10 # number of terrain rows (levels)
+        num_cols = 20 # number of terrain cols (types)
+        # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete]
+        # 比例
+        # 稍微不平的地
+        # 第2位是不平的地板
+        # 第3位是大楼梯
+        # 第4位是大楼梯
+        # 第5位是踩踏石（就是不平的地形）
+        # 第6位是间隙
+        # 第7位是长台阶
+        # 第8位是斜坡1
+        # 第9位是更不平的地面
+        # 第10位是碎木
+        # 第11是墙
+        # terrain_proportions = [0.1, 0.1, 0.0, 0.0, 0.1, 0.0, 0.30, 0.10,0.0,0.0,0.3]
+        terrain_proportions = [0.1, 0.15, 0.0, 0.0, 0.2, 0.0, 0.4, 0.15, 0.0, 0.0,0.0]
+        # terrain_proportions = [0.1, 0.2, 0.3, 0.3, 0.1]
+        # trimesh only:
+        slope_treshold = 0.75 # slopes above this threshold will be corrected to vertical surfaces
+
+    class commands:
+        curriculum = True
+        max_curriculum = 3.0        # 最大课程难度
+        # 命令数量
+        num_commands = 5 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)   原4
+        resampling_time = 10. # time before command are changed[s]
+        heading_command = True # if true: compute ang vel command from heading error
+        # 命令范围
+        class ranges:
+            lin_vel_x = [-1.0, 1.0] # min max [m/s]
+            lin_vel_y = [-1.0, 1.0]   # min max [m/s]
+            ang_vel_yaw = [-3.14, 3.14]    # min max [rad/s]
+            heading = [-3.14, 3.14]
+
+    class init_state:
+        pos = [0.0, 0.0, 1.] # x,y,z [m]
+        rot = [0.0, 0.0, 0.0, 1.0] # x,y,z,w [quat]
+        lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
+        ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
+        default_joint_angles = { # target angles when action = 0.0
+            "joint_a": 0., 
+            "joint_b": 0.}
+
+    class control:
+        control_type = 'P' # P: position, V: velocity, T: torques
+        # PD Drive parameters:
+        stiffness = {'joint_a': 10.0, 'joint_b': 15.}  # [N*m/rad]
+        damping = {'joint_a': 1.0, 'joint_b': 1.5}     # [N*m*s/rad]
+        # action scale: target angle = actionScale * action + defaultAngle
+        action_scale = 0.5
+        # decimation: Number of control action updates @ sim DT per policy DT
+        decimation = 4
+        hip_reduction = 1.0
+
+    class asset:
+        file = ""
+        name = "legged_robot"  # actor name
+        foot_name = "None" # name of the feet bodies, used to index body state and contact force tensors
+        penalize_contacts_on = []
+        terminate_after_contacts_on = []
+        disable_gravity = False
+        collapse_fixed_joints = True # merge bodies connected by fixed joints. Specific fixed joints can be kept by adding " <... dont_collapse="true">
+        fix_base_link = False # fixe the base of the robot
+        default_dof_drive_mode = 3 # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
+        self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
+        replace_cylinder_with_capsule = True # replace collision cylinders with capsules, leads to faster/more stable simulation
+        flip_visual_attachments = True # Some .obj meshes must be flipped from y-up to z-up
+        
+        density = 0.001                     # 密度
+        angular_damping = 0.                # 角阻尼
+        linear_damping = 0.                 # 线性阻尼
+        max_angular_velocity = 1000.        # 最大角速度
+        max_linear_velocity = 1000.         # 最大线速度
+        armature = 0.                       # 电枢
+        thickness = 0.01                    # 厚度
+
+    class domain_rand:
+        randomize_payload_mass = True       # 随机负载质量
+        payload_mass_range = [-1, 2]
+
+        randomize_com_displacement = True   # 随机质心位移
+        com_displacement_range = [-0.05, 0.05]
+
+        randomize_link_mass = False         # 随机连杆质量
+        link_mass_range = [0.9, 1.1]
+        
+        randomize_friction = True           # 随机摩擦
+        friction_range = [0.2, 1.25]
+        
+        randomize_restitution = False       # 随机恢复系数
+        restitution_range = [0., 1.0]
+        
+        randomize_motor_strength = True     # 随机电机强度
+        motor_strength_range = [0.9, 1.1]
+        
+        randomize_kp = True                 # 随机KP（比例增益）
+        kp_range = [0.9, 1.1]
+        
+        randomize_kd = True                 # 随机KD（微分增益）
+        kd_range = [0.9, 1.1]
+        
+        randomize_initial_joint_pos = True  # 随机初始关节位置范围
+        initial_joint_pos_range = [0.5, 1.5]
+        
+        disturbance = True                  # 是否启动干扰
+        disturbance_range = [-30.0, 30.0]
+        disturbance_interval = 8
+        
+        push_robots = True                  # 是否推送机器人
+        push_interval_s = 16
+        max_push_vel_xy = 1.
+
+        delay = True                        # 是否延迟
+
+    class rewards:
+        class scales:
+            termination = -0.0
+            tracking_lin_vel = 1.0
+            tracking_ang_vel = 0.5
+            lin_vel_z = -2.0
+            ang_vel_xy = -0.05
+            orientation = -0.
+            torques = -0.00001
+            dof_vel = -0.
+            dof_acc = -2.5e-7
+            base_height = -0. 
+            feet_air_time =  1.0
+            collision = -1.
+            feet_stumble = -0.0 
+            action_rate = -0.01
+            stand_still = -0.
+
+        # 仅正奖励
+        only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
+        # 跟踪奖励的sigma
+        tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
+        # urdf的限位百分比
+        soft_dof_pos_limit = 1. # percentage of urdf limits, values above this limit are penalized
+        soft_dof_vel_limit = 1.  # 关节速度软限位
+        soft_torque_limit = 1.  # 扭矩软限位
+        base_height_target = 1.  # 基座高度目标
+        max_contact_force = 100. # 最大接触力（高于此值的惩罚）
+        clearance_height_target = 0.09  # 间隙高度目标
+
+    class normalization:
+        # 观测缩放
+        class obs_scales:
+            lin_vel = 2.0
+            ang_vel = 0.25
+            dof_pos = 1.0
+            dof_vel = 0.05
+            height_measurements = 5.0
+        clip_observations = 100.            # 观测剪裁
+        clip_actions = 100.                 # 动作剪裁
+
+    class noise:
+        add_noise = True
+        noise_level = 1.0 # scales other values
+        # 噪声缩放
+        class noise_scales:
+            dof_pos = 0.01
+            dof_vel = 1.5
+            lin_vel = 0.1
+            ang_vel = 0.2
+            gravity = 0.05
+            height_measurements = 0.1
+
+    # viewer camera:
+    class viewer:
+        ref_env = 0
+        pos = [10, 0, 6]  # [m]
+        lookat = [11., 5, 3.]  # [m]
+
+    class sim:
+        dt =  0.005
+        substeps = 1
+        gravity = [0., 0. ,-9.81]  # [m/s^2]
+        up_axis = 1  # 0 is y, 1 is z
+
+        class physx:
+            num_threads = 10
+            solver_type = 1  # 0: pgs, 1: tgs
+            num_position_iterations = 4
+            num_velocity_iterations = 0
+            contact_offset = 0.01  # [m]
+            rest_offset = 0.0   # [m]
+            bounce_threshold_velocity = 0.5 #0.5 [m/s]
+            max_depenetration_velocity = 1.0
+            max_gpu_contact_pairs = 2**23 #2**24 -> needed for 8000 envs and more
+            default_buffer_size_multiplier = 5
+            contact_collection = 2 # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
+
+
+class LeggedRobotCfgPPO(BaseConfig):  # PPO算法配置类，继承自 BaseConfig
+    seed = 1  # 随机种子
+    runner_class_name = 'HIMOnPolicyRunner'  # 运行器类名称
+    class policy:  # 策略配置子类
+        init_noise_std = 1.0                    # 初始噪声标准差
+        actor_hidden_dims = [512, 256, 128]     # actor隐藏层维度
+        critic_hidden_dims = [512, 256, 128]    # critic隐藏层维度
+        activation = 'elu' # 激活函数（可为 elu, relu, selu, crelu, lrelu, tanh, sigmoid）
+        # only for 'ActorCriticRecurrent':  # 仅循环演员评论家相关
+        # rnn_type = 'lstm'  # RNN类型
+        # rnn_hidden_size = 512  # RNN隐藏大小
+        # rnn_num_layers = 1  # RNN层数
+        
+    class algorithm:                            # 算法配置子类
+        # training params  # 训练参数
+        value_loss_coef = 1.0                   # 值损失系数
+        use_clipped_value_loss = True           # 是否使用裁剪值损失
+        clip_param = 0.2                        # 裁剪参数
+        entropy_coef = 0.01                     # 熵系数
+        num_learning_epochs = 5                 # 学习轮次数
+        num_mini_batches = 4                    # 小批量大小（= num_envs*nsteps / nminibatches）
+        learning_rate = 1.e-3                   # 学习率
+        schedule = 'adaptive'                   # 学习率调度（adaptive 或 fixed）
+        gamma = 0.99                            # 折扣因子
+        lam = 0.95                              # GAE lambda
+        desired_kl = 0.01                       # 期望KL散度
+        max_grad_norm = 1.                      # 最大梯度范数
+
+    class runner:  # 运行器配置子类
+        policy_class_name = 'HIMActorCritic'    # 策略类名称
+        algorithm_class_name = 'HIMPPO'         # 算法类名称
+        num_steps_per_env = 100                 # 每个环境的步数（每个迭代）
+        max_iterations = 5000                   # 最大迭代次数（策略更新次数）
+
+        
+        save_interval = 100 
+        experiment_name = 'test'  
+        run_name = ''  
+        # load and resume  # 加载和恢复
+        resume = False                          # 是否恢复
+        load_run = -1                           # 加载运行（-1 为最后运行）
+        checkpoint = -1                         # 检查点（-1 为最后保存模型）
+        resume_path = None                      # 恢复路径（从 load_run 和 chkpt 更新）
