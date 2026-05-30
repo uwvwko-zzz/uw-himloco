@@ -31,10 +31,11 @@ cmd_scale: [2.0, 2.0, 0.25, 0.0]  # lin_x, lin_y, ang_z, heading
 # 策略输入输出维度
 num_actions: 12
 
-num_obs: 270   
+# num_obs: 275   
 
-# num_obs: 276                # 46 * 6 = 276 (46维单步观测 × 6步历史)
-num_one_step_obs: 45        # 单步观测维度 (45维基础 + 1维高度指令)
+num_obs: 276                # 46 * 6 = 276 (46维单步观测 × 6步历史)
+num_one_step_obs: 46
+# num_one_step_obs: 45        # 单步观测维度 (45维基础 + 1维高度指令)
 
 # 高度指令参数 (与 Isaac Gym legged_robot.py compute_observations 一致)
 height_cmd_default: 0.25    # 默认身体高度 [m]

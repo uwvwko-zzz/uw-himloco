@@ -1582,15 +1582,6 @@ class LeggedRobot(BaseTask):
     #     base_height = self._get_base_heights()
     #     return torch.square(base_height - self.cfg.rewards.base_height_target)
     
-    # def _reward_base_height(self):
-    #     base_height = self._get_base_heights()
-    #     if self.cfg.commands.num_commands >= 5:
-    #         height_target = self.commands[:, 4]
-    #     else:
-    #         height_target = self.cfg.rewards.base_height_target
-    #     height_error = base_height - height_target
-    #     return torch.exp(-torch.square(height_error) / 0.005)
-    
     def _reward_base_height(self):
         base_height = self._get_base_heights()
         if self.cfg.commands.num_commands >= 5:

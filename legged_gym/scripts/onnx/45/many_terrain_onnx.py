@@ -1,5 +1,4 @@
 # 多障碍环境
-
 import os
 import sys
 
@@ -23,7 +22,6 @@ import onnxruntime as ort
 from legged_gym.envs import *
 from legged_gym.utils import get_args, task_registry
 from legged_gym.utils.terrain import Terrain
-
 
 def t_shaped_stairs_terrain(terrain, horizontal_scale, vertical_scale):
     """

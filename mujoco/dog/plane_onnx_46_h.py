@@ -1,5 +1,15 @@
 """
 Dog Sim2Sim — IsaacGym → MuJoCo
+高度指令紧跟 cmd 之后 (第4维, index 3)
+
+obs 布局 (46维):
+  [0:3]   cmd            (3)
+  [3]     height_cmd     (1)   ← 从原第46维(index 45)移到这里
+  [4:7]   omega_body     (3)
+  [7:10]  proj_gravity   (3)
+  [10:22] dof_pos_dev    (12)
+  [22:34] dof_vel        (12)
+  [34:46] last_action    (12)
 
 关节顺序:
   MuJoCo XML 顺序 (即 URDF 顺序): FL(0-2), FR(3-5), RR(6-8), RL(9-11)
@@ -85,11 +95,12 @@ class ObsHistoryBuffer:
 vx_cmd = 0.0
 vy_cmd = 0.0
 wz_cmd = 0.0
+height_cmd = 0.25
 reset_flag = False
 print_action_flag = False
 
 def on_press(key):
-    global vx_cmd, vy_cmd, wz_cmd, reset_flag, print_action_flag
+    global vx_cmd, vy_cmd, wz_cmd, height_cmd, reset_flag, print_action_flag
     try:
         if key.char == 'w': vx_cmd = 1.0
         elif key.char == 's': vx_cmd = -1.0
@@ -97,7 +108,10 @@ def on_press(key):
         elif key.char == 'd': vy_cmd = -1.0
         elif key.char == 'q': wz_cmd = 1.0
         elif key.char == 'e': wz_cmd = -1.0
-        elif key.char == 'r': reset_flag = True
+        elif key.char == 'r': height_cmd = max(0.20, height_cmd - 0.02)
+        elif key.char == 'f': height_cmd = min(0.35, height_cmd + 0.02)
+        elif key.char == 'z': height_cmd = 0.25
+        elif key.char == 't': reset_flag = True
         elif key.char == 'y': print_action_flag = True
     except AttributeError:
         if key == keyboard.Key.up: vx_cmd = 1.0
@@ -120,23 +134,34 @@ def on_release(key):
 def build_single_obs(quat_xyzw, omega, joint_q_isaac, joint_dq_isaac,
                      last_action_isaac, default_angles_isaac,
                      cmd, cmd_scale, ang_vel_scale, dof_pos_scale, dof_vel_scale,
-                     clip_obs):
+                     clip_obs, height_cmd=0.25):
     """
-    构建45维单步观测 — 所有关节量使用 IsaacGym dof 顺序: FL, FR, RL, RR
+    构建46维单步观测 — 高度指令紧跟 cmd 之后
+    所有关节量使用 IsaacGym dof 顺序: FL, FR, RL, RR
+
+    布局:
+      [0:3]   cmd            (3)
+      [3]     height_cmd     (1)
+      [4:7]   omega_body     (3)
+      [7:10]  proj_gravity   (3)
+      [10:22] dof_pos_dev    (12)
+      [22:34] dof_vel        (12)
+      [34:46] last_action    (12)
     """
-    obs = np.zeros(45, dtype=np.float32)
+    obs = np.zeros(46, dtype=np.float32)
     obs[0:3] = cmd * cmd_scale[:3]
+    obs[3] = np.float32((height_cmd - 0.25) / 0.1)
 
     omega_body = quat_rotate_inverse(quat_xyzw, omega)
-    obs[3:6] = omega_body.astype(np.float32) * ang_vel_scale
+    obs[4:7] = omega_body.astype(np.float32) * ang_vel_scale
 
     gravity_world = np.array([0., 0., -1.], dtype=np.float64)
     proj_gravity = quat_rotate_inverse(quat_xyzw, gravity_world)
-    obs[6:9] = proj_gravity.astype(np.float32)
+    obs[7:10] = proj_gravity.astype(np.float32)
 
-    obs[9:21] = ((joint_q_isaac - default_angles_isaac) * dof_pos_scale).astype(np.float32)
-    obs[21:33] = (joint_dq_isaac * dof_vel_scale).astype(np.float32)
-    obs[33:45] = last_action_isaac
+    obs[10:22] = ((joint_q_isaac - default_angles_isaac) * dof_pos_scale).astype(np.float32)
+    obs[22:34] = (joint_dq_isaac * dof_vel_scale).astype(np.float32)
+    obs[34:46] = last_action_isaac
     obs = np.clip(obs, -clip_obs, clip_obs)
     return obs
 
@@ -159,8 +184,8 @@ if __name__ == "__main__":
 
     base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym"
     config_path = f"{base}/mujoco/dog/config/{args.config_file}"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/45_2/model_2500.onnx"
-    xml_path    = f"{base}/resources/robots/dog/xml/dog.xml"
+    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_5000.onnx"
+    xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/xml/dog_1.xml"
 
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -185,12 +210,12 @@ if __name__ == "__main__":
         TAU_LIMIT_HIP_THIGH, TAU_LIMIT_HIP_THIGH, TAU_LIMIT_CALF,
     ])
 
-    NUM_ONE_STEP_OBS = 45
+    NUM_ONE_STEP_OBS = 46
     HISTORY_LEN      = 6
     NUM_ACTIONS      = 12
 
     print(f"\n{'='*60}")
-    print(f"[CONFIG] Dog — 带 RL/RR 映射")
+    print(f"[CONFIG] Dog — 带 RL/RR 映射 (高度指令紧跟cmd)")
     print(f"{'='*60}")
     print(f"  IsaacGym dof: FL, FR, RL, RR")
     print(f"  MuJoCo dof:   FL, FR, RR, RL")
@@ -199,6 +224,7 @@ if __name__ == "__main__":
     print(f"  default_mujoco: {DEFAULT_ANGLES_MUJOCO}")
     print(f"  kps={kps[0]}, kds={kds[0]}, action_scale={action_scale}")
     print(f"  tau_limits: hip/thigh={TAU_LIMIT_HIP_THIGH}, calf={TAU_LIMIT_CALF}")
+    print(f"  obs 布局: cmd(3) + height(1) + omega(3) + gravity(3) + dof_pos(12) + dof_vel(12) + action(12) = 46")
     print(f"{'='*60}")
 
     mj_model = mujoco.MjModel.from_xml_path(xml_path)
@@ -244,12 +270,14 @@ if __name__ == "__main__":
             quat_xyzw, omega, joint_q_isaac, joint_dq_isaac,
             last_action_isaac, DEFAULT_ANGLES_ISAAC,
             np.zeros(3, dtype=np.float32), cmd_scale,
-            ang_vel_scale, dof_pos_scale, dof_vel_scale, clip_obs
+            ang_vel_scale, dof_pos_scale, dof_vel_scale, clip_obs,
+            height_cmd=0.25
         )
         obs_history.push(obs)
 
     print(f"[INFO] 预热完成, norm={np.linalg.norm(obs_history.buffer):.4f}")
-    print(f"\n  W/S:前后 A/D:左右 Q/E:转 空格:停 R:重置 Y:开始打印模型输出\n")
+    print(f"\n  W/S:前后 A/D:左右 Q/E:转 空格:停 T:重置 Y:开始打印模型输出")
+    print(f"  R:蹲下↓ F:站起↑ Z:重置高度(当前 {height_cmd:.2f}m)\n")
 
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     listener.start()
@@ -267,6 +295,7 @@ if __name__ == "__main__":
                 obs_history.reset()
                 last_action_isaac[:] = 0; action_isaac[:] = 0; count = 0; inference_count = 0
                 print_action_flag = False
+                height_cmd = 0.25
                 reset_flag = False
 
             # 读取 MuJoCo 状态
@@ -287,25 +316,27 @@ if __name__ == "__main__":
                         quat_xyzw, omega, joint_q_isaac, joint_dq_isaac,
                         last_action_isaac, DEFAULT_ANGLES_ISAAC,
                         cmd, cmd_scale,
-                        ang_vel_scale, dof_pos_scale, dof_vel_scale, clip_obs
+                        ang_vel_scale, dof_pos_scale, dof_vel_scale, clip_obs,
+                        height_cmd=height_cmd
                     )
                     obs_history.push(single_obs)
                     obs_input = obs_history.get()
 
                     if inference_count < 10:
                         print(f"\n{'='*60}")
-                        print(f"[推理 #{inference_count}] 完整 270 维 history obs (6帧×45维):")
+                        print(f"[推理 #{inference_count}] 完整 276 维 history obs (6帧×46维):")
                         buf = obs_history.buffer
                         for slot in range(HISTORY_LEN):
-                            base = slot * 45
-                            frame = buf[base:base+45]
-                            print(f"\n  --- 帧{slot} (offset {base}) ---")
+                            base_i = slot * 46
+                            frame = buf[base_i:base_i+46]
+                            print(f"\n  --- 帧{slot} (offset {base_i}) ---")
                             print(f"    cmd:          {frame[0:3]}")
-                            print(f"    gyro_body:    {frame[3:6]}")
-                            print(f"    proj_gravity: {frame[6:9]}")
-                            print(f"    dof_pos_dev:  {np.array2string(frame[9:21], precision=4, separator=', ')}")
-                            print(f"    dof_vel:      {np.array2string(frame[21:33], precision=4, separator=', ')}")
-                            print(f"    last_action:  {np.array2string(frame[33:45], precision=4, separator=', ')}")
+                            print(f"    height_cmd:   {frame[3]:.4f}")
+                            print(f"    gyro_body:    {frame[4:7]}")
+                            print(f"    proj_gravity: {frame[7:10]}")
+                            print(f"    dof_pos_dev:  {np.array2string(frame[10:22], precision=4, separator=', ')}")
+                            print(f"    dof_vel:      {np.array2string(frame[22:34], precision=4, separator=', ')}")
+                            print(f"    last_action:  {np.array2string(frame[34:46], precision=4, separator=', ')}")
                             print(f"    frame norm:   {np.linalg.norm(frame):.4f}")
                         if inference_count == 9:
                             print(f"\n[INFO] 前10帧 obs 已输出完毕，按 Y 开始打印模型输出。")
@@ -340,7 +371,7 @@ if __name__ == "__main__":
             if count % (control_decimation * 50) == 0:
                 grav = quat_rotate_inverse(quat_xyzw, np.array([0., 0., -1.]))
                 h = mj_data.qpos[2]
-                print(f"[{time.time()-start:.1f}s] Step {count} H={h:.3f} "
+                print(f"[{time.time()-start:.1f}s] Step {count} H={h:.3f}(cmd={height_cmd:.2f}) "
                       f"vx={mj_data.qvel[0]:.2f} vy={mj_data.qvel[1]:.2f} wz={mj_data.qvel[5]:.2f} "
                       f"grav_z={grav[2]:.3f} "
                       f"act=[{action_isaac.min():.2f},{action_isaac.max():.2f}]")

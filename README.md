@@ -75,45 +75,7 @@ himloco_gym/
 | Unitree Go2 | `go2` | Unitree Go2 四足机器人 |
 | Aliengo | `aliengo` | Aliengo 四足机器人 |
 
-## 环境要求
 
-- Ubuntu 20.04
-- NVIDIA Driver: 525.147.05
-- CUDA 12.0
-- Python 3.7.16
-- PyTorch 1.10.0+cu113
-- Isaac Gym: Preview 4
-
-## 安装
-
-1. **创建环境并安装 PyTorch**：
-
-```bash
-conda create -n himloco python=3.7.16
-conda activate himloco
-pip3 install torch==1.10.0+cu113 torchvision==0.11.1+cu113 torchaudio==0.10.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
-```
-
-2. **安装 Isaac Gym Preview 4**：
-
-```bash
-# 从 https://developer.nvidia.com/isaac-gym 下载
-cd isaacgym/python && pip install -e .
-```
-
-3. **安装本框架和 rsl_rl**：
-
-```bash
-cd HIMLoco-main/rsl_rl && pip install -e .
-cd ../himloco_gym && pip install -e .
-```
-
-> **注意：** 请使用本项目提供的 `himloco_gym` 和 `rsl_rl`，包含对原始仓库的修改。
-
-4. **MuJoCo 部署（可选）**：
-
-```bash
-pip install mujoco onnxruntime pynput pyyaml
 ```
 
 ## 使用方法

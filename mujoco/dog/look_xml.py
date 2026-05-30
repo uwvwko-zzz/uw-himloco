@@ -25,8 +25,8 @@ default_dof_pos = np.array([
 # PD 参数
 KPS = 40.0
 KDS = 1.0
-TAU_LIMIT_HIP_THIGH = 23.7
-TAU_LIMIT_CALF = 35.55
+TAU_LIMIT_HIP_THIGH = 17.0
+TAU_LIMIT_CALF = 34.0
 
 exit_flag = False
 

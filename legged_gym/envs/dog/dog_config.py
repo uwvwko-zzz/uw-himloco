@@ -64,7 +64,7 @@ class DogRoughCfg( LeggedRobotCfg ):
             # [4] range_height：（自己新增）
 
             # num_commands = 5 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
-            num_commands = 4
+            num_commands = 5
 
             # 命令更新间隔，每 10 秒重新采样一个新命令
             resampling_time = 10. # time before command are changed[s]
@@ -79,7 +79,7 @@ class DogRoughCfg( LeggedRobotCfg ):
 
 
     class asset( LeggedRobotCfg.asset ):
-        file = '/home/extra/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/urdf/dog.urdf'
+        file = '/home/extra/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/urdf/dog_1.urdf'
         name = "dog"             
         foot_name = "foot"            
 
@@ -114,7 +114,7 @@ class DogRoughCfg( LeggedRobotCfg ):
         soft_torque_limit = 1.
 
         # 目标高度
-        base_height_target = 0.25               # 0.35
+        base_height_target = 0.35               # 0.35
         # 最大允许接触力
         max_contact_force = 100.
         # 抬腿高度目标，-0.20 = 20 厘米离地
@@ -137,7 +137,7 @@ class DogRoughCfg( LeggedRobotCfg ):
             # 关节加速度惩罚
             joint_power = -2e-5
             # 身体高度偏离惩罚 
-            base_height = -1.0          # -1.0(45)    0.5(46)
+            base_height = 0.5          # -1.0(45)    0.5(46)
             # 脚部间隙惩罚
             foot_clearance = -0.01
             # 动作变化率惩罚

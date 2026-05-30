@@ -33,15 +33,15 @@ from .base_config import BaseConfig
 class LeggedRobotCfg(BaseConfig):
     class env:
         num_envs = 4096                                     # go2 3700的环境启动
-        # num_envs = 3700
+        # num_envs = 500
         # num_envs = 100
-        # num_one_step_observations = 46      # 单次观测维度+高度命令
-        num_one_step_observations = 45
+        num_one_step_observations = 46      # 单次观测维度+高度命令
+        # num_one_step_observations = 45
         
 
         num_observations = num_one_step_observations * 6        # 总观测维度（加上5个历史观测的堆叠）
-        # num_one_step_privileged_obs = 46 + 3 + 3 + 187          # 单步特权观测数量（额外包括基线速度、外力、扫描点等）
-        num_one_step_privileged_obs = 45 + 3 + 3 + 187          # 单步特权观测数量（额外包括基线速度、外力、扫描点等）
+        num_one_step_privileged_obs = 46 + 3 + 3 + 187          # 单步特权观测数量（额外包括基线速度、外力、扫描点等）
+        # num_one_step_privileged_obs = 45 + 3 + 3 + 187          # 单步特权观测数量（额外包括基线速度、外力、扫描点等）
         
         num_privileged_obs = num_one_step_privileged_obs * 1    # 总特权观测数量
         num_actions = 12                                        # 动作数量

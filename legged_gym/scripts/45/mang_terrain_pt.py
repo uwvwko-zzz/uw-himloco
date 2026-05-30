@@ -660,6 +660,11 @@ def play(args):
     env_cfg.terrain.border_size = 0.0  # 场景间距
     # 禁用自动终止条件（如摔倒），使环境不自动重置
     # env_cfg.terrain.base_height = -10.0
+    env_cfg.commands.num_commands = 4
+    env_cfg.env.num_one_step_observations = 45
+    env_cfg.env.num_observations = 45 * 6  # 必须手动更新！基类在定义时已算好 45*6=270
+    env_cfg.env.num_one_step_privileged_obs = 45 + 3 + 3 + 187
+    env_cfg.env.num_privileged_obs = env_cfg.env.num_one_step_privileged_obs * 1  # 同理
 
 
     # --- 2. 创建环境 ---
@@ -683,7 +688,7 @@ def play(args):
     )
     
     # === 手动指定完整路径加载（关键修复）===
-    policy_path = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/Apr21_01-18-24_/model_5000.pt"
+    policy_path = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/45_4/model_4500.pt"
     print(f"[INFO] Loading policy from: {policy_path}")
     
     # 直接调用 runner.load() 传入完整路径

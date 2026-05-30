@@ -1,5 +1,3 @@
-# 多障碍环境
-
 import os
 import sys
 
@@ -704,7 +702,7 @@ def play(args):
     print(f"{'='*60}")
 
     # ==================== 3. 加载 ONNX 模型 ====================
-    ONNX_MODEL_PATH = '/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/46_plane_2/model_2600.pt'
+    ONNX_MODEL_PATH = '/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/46_plane_3/model_1500.pt'
     if not os.path.exists(ONNX_MODEL_PATH):
         print(f"[ERROR] ONNX model not found: {ONNX_MODEL_PATH}")
         sys.exit(1)

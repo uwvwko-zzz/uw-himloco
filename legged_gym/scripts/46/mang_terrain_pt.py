@@ -557,6 +557,12 @@ def multi_terrain_selected(self):
             "platform_size": 3.0
         }),
 
+        # 金字塔斜坡（平滑斜坡）
+        (terrain_utils.pyramid_sloped_terrain, {"slope": 0.3, "platform_size": 1.0}),
+
+        # 金字塔台阶（阶梯式）
+        (terrain_utils.pyramid_stairs_terrain, {"step_width": 0.3, "step_height": 0.1, "platform_size": 1.0}),
+
 
         # 深坑
         # (terrain_utils.stepping_stones_terrain, {
@@ -766,7 +772,7 @@ def play(args):
     )
     
     # === 手动指定完整路径加载（关键修复）===
-    policy_path = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/46_plane_1/model_2500.pt"
+    policy_path = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_5000.pt"
     print(f"[INFO] Loading policy from: {policy_path}")
     
     # 直接调用 runner.load() 传入完整路径
