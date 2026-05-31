@@ -12,7 +12,6 @@ import mujoco.viewer
 import numpy as np
 import onnxruntime as ort
 import yaml
-from pynput import keyboard
 
 
 # ============================================================
@@ -82,43 +81,82 @@ class ObsHistoryBuffer:
         self.buffer[:] = 0.0
 
 
-vx_cmd = 0.0
-vy_cmd = 0.0
-wz_cmd = 0.0
+# ============================================================
+#  键盘控制 — MuJoCo key_callback (按住运动，松开停止)
+#  利用按键重复: 按住时 OS 持续发送 key 事件 (间隔 ~30ms)
+#  松开后停止发送, 超过 KEY_TIMEOUT 即归零指令
+#  移动键 (W/A/S/D/Q/E/方向键): 按住运动，松开停止
+#  功能键 (R/F/Z/T/Y/X):        单次触发
+#  注意: 不使用 Space (与 MuJoCo 暂停冲突)，改用 X 紧急停止
+# ============================================================
+
+# GLFW 按键码 (MuJoCo viewer 使用 GLFW)
+GLFW_KEY_W = 87;  GLFW_KEY_S = 83
+GLFW_KEY_A = 65;  GLFW_KEY_D = 68
+GLFW_KEY_Q = 81;  GLFW_KEY_E = 69
+GLFW_KEY_R = 82;  GLFW_KEY_F = 70
+GLFW_KEY_Z = 90;  GLFW_KEY_T = 84
+GLFW_KEY_Y = 89;  GLFW_KEY_X = 88
+GLFW_KEY_UP = 265; GLFW_KEY_DOWN = 264
+GLFW_KEY_LEFT = 263; GLFW_KEY_RIGHT = 262
+
+# 按住-移动超时 (秒): 超过此时间没收到按键重复事件则归零
+# 需大于 OS 按键初始重复延迟 (~300-500ms)，设 0.5s 保证长按不中断
+KEY_TIMEOUT = 1.5
+
+# 记录每个方向最后一次按键时间
+_last_key_time = {'w': 0.0, 's': 0.0, 'a': 0.0, 'd': 0.0, 'q': 0.0, 'e': 0.0}
+
+# 按键码 → 方向映射
+_KEY_TO_DIR = {
+    GLFW_KEY_W: 'w', GLFW_KEY_S: 's',
+    GLFW_KEY_A: 'a', GLFW_KEY_D: 'd',
+    GLFW_KEY_Q: 'q', GLFW_KEY_E: 'e',
+    GLFW_KEY_UP: 'w', GLFW_KEY_DOWN: 's',
+    GLFW_KEY_LEFT: 'a', GLFW_KEY_RIGHT: 'd',
+}
+
+# 全局状态
 height_cmd = 0.25
 reset_flag = False
 print_action_flag = False
 
-def on_press(key):
-    global vx_cmd, vy_cmd, wz_cmd, height_cmd, reset_flag, print_action_flag
-    try:
-        if key.char == 'w': vx_cmd = 1.0
-        elif key.char == 's': vx_cmd = -1.0
-        elif key.char == 'a': vy_cmd = 1.0
-        elif key.char == 'd': vy_cmd = -1.0
-        elif key.char == 'q': wz_cmd = 1.0
-        elif key.char == 'e': wz_cmd = -1.0
-        elif key.char == 'r': height_cmd = max(0.20, height_cmd - 0.02)
-        elif key.char == 'f': height_cmd = min(0.35, height_cmd + 0.02)
-        elif key.char == 'z': height_cmd = 0.25
-        elif key.char == 't': reset_flag = True
-        elif key.char == 'y': print_action_flag = True
-    except AttributeError:
-        if key == keyboard.Key.up: vx_cmd = 1.0
-        elif key == keyboard.Key.down: vx_cmd = -1.0
-        elif key == keyboard.Key.left: vy_cmd = 1.0
-        elif key == keyboard.Key.right: vy_cmd = -1.0
-        elif key == keyboard.Key.space: vx_cmd = vy_cmd = wz_cmd = 0.0
 
-def on_release(key):
-    global vx_cmd, vy_cmd, wz_cmd
-    try:
-        if key.char in 'ws': vx_cmd = 0.0
-        elif key.char in 'ad': vy_cmd = 0.0
-        elif key.char in 'qe': wz_cmd = 0.0
-    except AttributeError:
-        if key in [keyboard.Key.up, keyboard.Key.down]: vx_cmd = 0.0
-        elif key in [keyboard.Key.left, keyboard.Key.right]: vy_cmd = 0.0
+def key_callback(keycode):
+    """MuJoCo 键盘回调 — 按住移动，功能键触发"""
+    global height_cmd, reset_flag, print_action_flag
+    now = time.time()
+
+    # 移动键 — 记录按压时间
+    if keycode in _KEY_TO_DIR:
+        _last_key_time[_KEY_TO_DIR[keycode]] = now
+    # 功能键
+    elif keycode == GLFW_KEY_R:
+        height_cmd = max(0.20, height_cmd - 0.02)
+    elif keycode == GLFW_KEY_F:
+        height_cmd = min(0.35, height_cmd + 0.02)
+    elif keycode == GLFW_KEY_Z:
+        height_cmd = 0.25
+    elif keycode == GLFW_KEY_T:
+        reset_flag = True
+    elif keycode == GLFW_KEY_Y:
+        print_action_flag = not print_action_flag
+    elif keycode == GLFW_KEY_X:
+        # X: 紧急停止 — 清除所有方向时间
+        for k in _last_key_time:
+            _last_key_time[k] = 0.0
+
+
+def get_commands():
+    """根据按键时间计算当前指令 (按住运动，松开停止)"""
+    now = time.time()
+    vx = ( 1.0 if (now - _last_key_time['w']) < KEY_TIMEOUT else
+          -1.0 if (now - _last_key_time['s']) < KEY_TIMEOUT else 0.0)
+    vy = ( 1.0 if (now - _last_key_time['a']) < KEY_TIMEOUT else
+          -1.0 if (now - _last_key_time['d']) < KEY_TIMEOUT else 0.0)
+    wz = ( 1.0 if (now - _last_key_time['q']) < KEY_TIMEOUT else
+          -1.0 if (now - _last_key_time['e']) < KEY_TIMEOUT else 0.0)
+    return np.array([vx, vy, wz], dtype=np.float32)
 
 
 def build_single_obs(quat_xyzw, omega, joint_q_isaac, joint_dq_isaac,
@@ -165,7 +203,7 @@ if __name__ == "__main__":
 
     base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym"
     config_path = f"{base}/mujoco/dog/config/{args.config_file}"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_5000.onnx"
+    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_1500.onnx"
     xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/xml/dog_1.xml"
 
     with open(config_path, "r") as f:
@@ -256,19 +294,18 @@ if __name__ == "__main__":
         obs_history.push(obs)
 
     print(f"[INFO] 预热完成, norm={np.linalg.norm(obs_history.buffer):.4f}")
-    print(f"\n  W/S:前后 A/D:左右 Q/E:转 空格:停 T:重置 Y:开始打印模型输出")
-    print(f"  R:蹲下↓ F:站起↑ Z:重置高度(当前 {height_cmd:.2f}m)\n")
+    print(f"\n  W/S:前后 A/D:左右 Q/E:转 X:紧急停止 T:重置 Y:打印模型输出")
+    print(f"  R:蹲下↓ F:站起↑ Z:重置高度(默认 0.25m)")
+    print(f"  [按住移动，松开停止] 需要 MuJoCo viewer 窗口有焦点!\n")
 
-    listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-    listener.start()
-
-    with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
+    with mujoco.viewer.launch_passive(mj_model, mj_data, key_callback=key_callback) as viewer:
         start = time.time()
 
         while viewer.is_running() and time.time() - start < simulation_duration:
             step_start = time.time()
 
-            cmd = np.array([vx_cmd, vy_cmd, wz_cmd], dtype=np.float32)
+            # 获取当前指令 (按住运动，松开停止)
+            cmd = get_commands()
 
             if reset_flag:
                 reset_robot(mj_model, mj_data, DEFAULT_ANGLES_MUJOCO)
@@ -361,5 +398,4 @@ if __name__ == "__main__":
             if simulation_dt - elapsed > 0:
                 time.sleep(simulation_dt - elapsed)
 
-    listener.stop()
     print("\n[INFO] 仿真结束")

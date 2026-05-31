@@ -32,9 +32,9 @@ from .base_config import BaseConfig
 
 class LeggedRobotCfg(BaseConfig):
     class env:
-        num_envs = 4096                                     # go2 3700的环境启动
+        # num_envs = 4096                                     # go2 3700的环境启动
         # num_envs = 500
-        # num_envs = 100
+        num_envs = 100
         num_one_step_observations = 46      # 单次观测维度+高度命令
         # num_one_step_observations = 45
         
@@ -240,6 +240,11 @@ class LeggedRobotCfg(BaseConfig):
             feet_stumble = -0.0 
             action_rate = -0.01
             stand_still = -0.
+            # 新增奖励函数（参考 OpenDoge_train）
+            smoothness = -0.0
+            diagonal_sync = -0.0
+            hip_mirror_symmetry = -0.0
+            default_pos_linear = -0.0
 
         # 仅正奖励
         only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)

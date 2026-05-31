@@ -79,7 +79,7 @@ class DogRoughCfg( LeggedRobotCfg ):
 
 
     class asset( LeggedRobotCfg.asset ):
-        file = '/home/extra/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/urdf/dog_1.urdf'
+        file = '/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/urdf/dog_1.urdf'
         name = "dog"             
         foot_name = "foot"            
 
@@ -143,13 +143,17 @@ class DogRoughCfg( LeggedRobotCfg ):
             # 动作变化率惩罚
             action_rate = -0.01
             # 动作平滑性惩罚
-            smoothness = -0.01
             # 腾空相奖励
             feet_air_time =  1.0
             
             collision = -0.0
             feet_stumble = -0.0
-            stand_still = -0.
+            stand_still = -1.0
+            # 新增奖励函数（参考 OpenDoge_train）
+            smoothness = -0.02
+            diagonal_sync = -0.15
+            hip_mirror_symmetry = -0.1
+            default_pos_linear = -0.05
             torques = -0.0
             dof_vel = -0.0
             dof_pos_limits = 0.0
