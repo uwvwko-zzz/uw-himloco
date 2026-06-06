@@ -127,7 +127,7 @@ class DogRoughCfg( LeggedRobotCfg ):
             # 角速度追踪奖励
             tracking_ang_vel = 0.5
             # 竖直速度惩罚
-            lin_vel_z = -1.0            # -1.0
+            lin_vel_z = -0.5            # -1.0
             # 水平面滚转/俯仰速度惩罚
             ang_vel_xy = -0.05
             # 身体朝向惩罚 
@@ -149,15 +149,26 @@ class DogRoughCfg( LeggedRobotCfg ):
             collision = -0.0
             feet_stumble = -0.0
             stand_still = -1.0
-            # 新增奖励函数（参考 OpenDoge_train）
+            # 二阶动作平滑性，让动作变化更平稳，避免突然抖动
             smoothness = -0.02
+            # 新增奖励函数（参考 OpenDoge_train）
+            
+            # 对角线步态同步
             diagonal_sync = -0.15
-            hip_mirror_symmetry = -0.1
-            default_pos_linear = -0.05
+            # 髋关节左右对称
+            hip_mirror_symmetry = -0.2
+            # 默认姿态线性惩罚
+            default_pos_linear = -0.00      # -0.05
+            
+            # 惩罚电机输出力矩过大
             torques = -0.0
+            # 惩罚关节运动速度过快
             dof_vel = -0.0
+            # 关节位置限位惩罚
             dof_pos_limits = 0.0
+            # 关节速度限位惩罚
             dof_vel_limits = 0.0
+            # 力矩限位惩罚
             torque_limits = 0.0
 
 class DogRoughCfgPPO( LeggedRobotCfgPPO ):

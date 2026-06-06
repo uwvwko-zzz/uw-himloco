@@ -56,7 +56,7 @@ class HIMLocoONNXWrapper(nn.Module):
 
 def export():
     # 硬编码模型路径和参数（避免导入 task_registry）
-    MODEL_PATH = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/xian/model_4400.pt"
+    MODEL_PATH = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_4500.pt"
     
     # 加载 checkpoint
     ckpt = torch.load(MODEL_PATH, map_location="cpu")
@@ -107,7 +107,7 @@ def export():
         print("✅ Wrapper 输出与原始模型一致!")
 
     # ========== 6. 导出 ONNX ==========
-    output_path = '/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/xian/model_4400.onnx'
+    output_path = '/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_4500.onnx'
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     torch.onnx.export(

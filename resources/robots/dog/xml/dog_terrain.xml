@@ -1,10 +1,10 @@
 <mujoco model="dog terrain scene">
 <compiler angle="radian" meshdir="../meshes/"/>
 <size njmax="500" nconmax="100"/>
-<option gravity="0 0 -9.806" iterations="50" solver="Newton" timestep="0.005"/>
+<option gravity="0 0 -9.806" iterations="100" solver="Newton" timestep="0.005" integrator="implicitfast"/>
 
 <default>
-  <geom contype="1" conaffinity="1" friction="0.6 0.3 0.3" margin="0.001" group="0"/>
+  <geom contype="1" conaffinity="1" condim="6" friction="0.6 0.005 0.01" margin="0.001" group="0"/>
   <light castshadow="false" diffuse="1 1 1"/>
   <joint damping="0.01" armature="0.01" frictionloss="0.2"/>
   <camera fovy="60"/>
@@ -44,6 +44,7 @@
 </asset>
 <worldbody>
 <light pos="0 0 1.5" dir="0 0 -1" directional="true" />
+<camera name="track" mode="trackcom" pos="0 -1.3 1.6" xyaxes="1 0 0 0 0.707 0.707"/>
 <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" />
 
 <!-- 30cm高墙：旋转90度，沿x轴方向放置，并与T型楼梯中心线 y=-3.50 对齐 -->
@@ -118,6 +119,12 @@
 <geom pos="2.45 -3.50 0.25" type="box" size="0.15 0.5 0.05" quat="1.0 0.0 0.0 0.0" rgba="0.75 0.72 0.55 1.0"/>
 <geom pos="2.75 -3.50 0.15" type="box" size="0.15 0.5 0.05" quat="1.0 0.0 0.0 0.0" rgba="0.75 0.72 0.55 1.0"/>
 <geom pos="3.05 -3.50 0.05" type="box" size="0.15 0.5 0.05" quat="1.0 0.0 0.0 0.0" rgba="0.75 0.72 0.55 1.0"/>
+
+<!-- 顶部平台向 -x 方向连接地面的10cm台阶 -->
+
+<geom pos="1.15 -3.50 0.25" type="box" size="0.15 0.5 0.05" quat="1.0 0.0 0.0 0.0" rgba="0.75 0.72 0.55 1.0"/>
+<geom pos="0.85 -3.50 0.15" type="box" size="0.15 0.5 0.05" quat="1.0 0.0 0.0 0.0" rgba="0.75 0.72 0.55 1.0"/>
+<geom pos="0.55 -3.50 0.05" type="box" size="0.15 0.5 0.05" quat="1.0 0.0 0.0 0.0" rgba="0.75 0.72 0.55 1.0"/>
 
 
 
@@ -353,7 +360,8 @@
 
 
 <!-- ============ Dog Robot (spawn at red square 3.7, -9.0) ============ -->
-<body name="trunk" pos="3.7 -9.0 0.45">
+<body name="trunk" pos="3.7 -9.0 0.45" quat="-0.7071068 0 0 0.7071068">
+<!-- <body name="trunk" pos="3.7 -9.0 0.45" quat="0 0 0 1"> -->
   <inertial pos="0.0063754 0 0" quat="1 0 0 0" mass="4.74" diaginertia="0.018108 0.039024 0.048926"/>
   <joint type="free"/>
   <geom type="mesh" mesh="base" contype="0" conaffinity="0" group="1" rgba="0.10196 0.10196 0.10196 1"/>

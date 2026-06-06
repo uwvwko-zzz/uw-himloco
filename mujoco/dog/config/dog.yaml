@@ -1,5 +1,5 @@
 # 仿真时长
-simulation_duration: 60.0
+simulation_duration: 300.0
 # 仿真步长时间  
 simulation_dt: 0.005  # Isaac Gym 默认 dt=0.005
 # 多少仿真步进行一次推理

@@ -1676,10 +1676,21 @@ class LeggedRobot(BaseTask):
              5 *torch.abs(self.contact_forces[:, self.feet_indices, 2]), dim=1)
 
     # 静止稳定性        
-    def _reward_stand_still(self):
-        # Penalize motion at zero commands
-        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+    # def _reward_stand_still(self):
+    #     # Penalize motion at zero commands
+    #     return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
 
+    # 静止惩罚（基于关节速度，支持蹲姿等任意静态姿态）
+    def _reward_stand_still(self):
+        # 命令接近零时（线速度+角速度都为零）
+        stand_mask = (torch.norm(self.commands[:, :2], dim=1) < 0.1).float() \
+                * (torch.abs(self.commands[:, 2]) < 0.1).float()
+        # 惩罚关节速度
+        dof_pen = torch.sum(torch.abs(self.dof_vel), dim=1)
+        # 惩罚身体移动（线速度+角速度）
+        body_vel_pen = torch.sum(torch.square(self.base_lin_vel[:, :2]), dim=1) \
+                    + torch.square(self.base_ang_vel[:, 2])
+        return (dof_pen + body_vel_pen) * stand_mask
     # 脚部接触力惩罚
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
@@ -1690,7 +1701,7 @@ class LeggedRobot(BaseTask):
     # 对角线步态同步惩罚 — 鼓励 trot 步态（FL+RR 同步, FR+RL 同步）
     def _reward_diagonal_sync(self):
         # 惩罚对角腿接触不同步
-        # feet_indices 顺序: [FL, FR, RL, RR] 或类似，根据 URDF 确定
+        # feet_indices 顺序: [FL, FR, RL, RR] 或类似，根据 isaacgym自己的顺序 确定
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.0
         # 对角线同步误差：对角两只脚接触状态的差异
         # 假设顺序为 FL(0), FR(1), RL(2), RR(3)
@@ -1702,13 +1713,13 @@ class LeggedRobot(BaseTask):
     def _reward_hip_mirror_symmetry(self):
         # 惩罚左右两侧髋关节角度不对称
         dof_diff = self.dof_pos - self.default_dof_pos
-        # 假设关节顺序: FL_hip(0), FL_thigh(1), FL_calf(2),
+        #       关节顺序: FL_hip(0), FL_thigh(1), FL_calf(2),
         #               FR_hip(3), FR_thigh(4), FR_calf(5),
         #               RL_hip(6), RL_thigh(7), RL_calf(8),
         #               RR_hip(9), RR_thigh(10), RR_calf(11)
         left_hips = dof_diff[:, [0, 6]]    # FL_hip, RL_hip
         right_hips = dof_diff[:, [3, 9]]   # FR_hip, RR_hip
-        return torch.sum(torch.abs(left_hips - right_hips), dim=1)
+        return torch.sum(torch.abs(left_hips + right_hips), dim=1)
 
     # 线性默认姿态惩罚 — 温和地保持接近默认关节角度
     def _reward_default_pos_linear(self):

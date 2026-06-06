@@ -772,7 +772,7 @@ def play(args):
     )
     
     # === 手动指定完整路径加载（关键修复）===
-    policy_path = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_5000.pt"
+    policy_path = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_2100.pt"
     print(f"[INFO] Loading policy from: {policy_path}")
     
     # 直接调用 runner.load() 传入完整路径
