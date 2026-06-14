@@ -33,7 +33,6 @@ from .base_config import BaseConfig
 class LeggedRobotCfg(BaseConfig):
     class env:
         # num_envs = 4096                                     # go2 3700的环境启动
-        # num_envs = 500
         num_envs = 100
         num_one_step_observations = 46      # 单次观测维度+高度命令
         # num_one_step_observations = 45

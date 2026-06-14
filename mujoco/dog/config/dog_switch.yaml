@@ -1,0 +1,74 @@
+# dog_switch.yaml — 模型热切换版配置 (对应 play_xbox_onnx_46_switch.py)
+# 基于 dog_policy_test_12.cpp 的模型切换逻辑
+#
+# ★ 核心功能:
+#   - 模型列表 (models 列表, 每项含 name / path / obs_dim)
+#   - Xbox 手柄 Back/Start 按钮 (或键盘 N/M) 循环切换模型
+#   - 切换时自动重置 history / actions / RL 状态
+#
+# 运行命令:
+#   python3 mujoco/dog/play_xbox_onnx_46_switch.py dog_switch.yaml
+
+# ==========================
+# 仿真参数
+# ==========================
+simulation_duration: 300.0
+simulation_dt: 0.005
+control_decimation: 4
+
+# ==========================
+# PD 控制器参数
+# ==========================
+kps: [40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40]
+kds: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+# ==========================
+# 观测/动作缩放因子
+# ==========================
+ang_vel_scale: 0.25
+dof_pos_scale: 1.0
+dof_vel_scale: 0.05
+action_scale: 0.25
+cmd_scale: [2.0, 2.0, 0.25, 0.0]
+
+# ==========================
+# 高度指令参数
+# ==========================
+height_cmd_default: 0.25
+height_cmd_range: [0.2, 0.35]
+
+# ==========================
+# ★ 模型列表 (核心功能)
+# 手柄: Back=上一个, Start=下一个
+# 切换时自动关闭 RL, 按 Y 重新启动
+# ==========================
+models:
+
+  - name: "terrain_good_3500"
+    path: "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/46_terrain_good_1/model_3500.onnx"
+    obs_dim: 46
+
+  - name: "plane_good_1500"
+    path: "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/46_plane_good_1/model_1500.onnx"
+    obs_dim: 46
+
+  - name: "plane_dun_1500"
+    path: "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_1500.onnx"
+    obs_dim: 46
+
+# 默认模型索引 (0-based)
+default_model_index: 0
+
+# ==========================
+# MuJoCo XML 路径
+# ==========================
+xml_path: "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/xml/dog_terrain.xml"
+
+# ==========================
+# Xbox 手柄参数
+# ==========================
+joy_vx_max: 1.0
+joy_vy_max: 1.0
+joy_wz_max: 1.0
+joy_deadband: 0.1
+joy_timeout_sec: 0.5

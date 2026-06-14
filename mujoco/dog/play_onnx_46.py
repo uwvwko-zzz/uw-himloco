@@ -5,6 +5,9 @@ Dog Sim2Sim — IsaacGym → MuJoCo
   MuJoCo XML 顺序 (即 URDF 顺序): FL(0-2), FR(3-5), RR(6-8), RL(9-11)
   IsaacGym dof 顺序 (内部重排):    FL(0-2), FR(3-5), RL(6-8), RR(9-11)
   → 后两条腿反了! 需要 RL/RR 映射!
+
+
+   sudo chmod 666 /dev/input/event*
 """
 import time
 import mujoco
@@ -83,43 +86,96 @@ class ObsHistoryBuffer:
 
 # ============================================================
 #  键盘控制
-#  移动键 (W/A/S/D/Q/E): pynput 监听按下/释放, 即按即动, 松手即停
+#  移动键 (W/A/S/D/Q/E): evdev 监听按下/释放, 即按即动, 松手即停
 #  功能键 (R/F/Z/T/Y/X): MuJoCo key_callback 单次触发
 # ============================================================
 
-# --- pynput: 移动键实时按下/释放状态 ---
-from pynput import keyboard as _kb
+# --- evdev: 直接读取 Linux 输入设备 (Wayland/X11 均兼容) ---
+import evdev
+import threading
+
+def _find_keyboards():
+    """自动检测键盘设备 (支持 EV_KEY 且有字母键)"""
+    keyboards = []
+    for path in evdev.list_devices():
+        try:
+            dev = evdev.InputDevice(path)
+            caps = dev.capabilities()
+            if evdev.ecodes.EV_KEY in caps:
+                keys = caps[evdev.ecodes.EV_KEY]
+                if evdev.ecodes.KEY_W in keys:
+                    keyboards.append(dev)
+                    continue
+        except Exception:
+            pass
+    return keyboards
 
 _pressed_keys = set()   # 当前正被按住的键 (小写字母)
 
-_DIR_MAP = {
-    'w': 'w', 's': 's', 'a': 'a', 'd': 'd', 'q': 'q', 'e': 'e',
-    _kb.Key.up: 'w', _kb.Key.down: 's',
-    _kb.Key.left: 'a', _kb.Key.right: 'd',
+# 方向键映射: evdev scancode → 方向字母
+_DIR_SCANCODES = {
+    evdev.ecodes.KEY_W: 'w', evdev.ecodes.KEY_S: 's',
+    evdev.ecodes.KEY_A: 'a', evdev.ecodes.KEY_D: 'd',
+    evdev.ecodes.KEY_Q: 'q', evdev.ecodes.KEY_E: 'e',
+    evdev.ecodes.KEY_UP: 'w', evdev.ecodes.KEY_DOWN: 's',
+    evdev.ecodes.KEY_LEFT: 'a', evdev.ecodes.KEY_RIGHT: 'd',
 }
 
-def _kb_normalize(raw):
-    """pynput key → 方向字母, 不是移动键返回 None"""
-    if isinstance(raw, _kb.Key):
-        return _DIR_MAP.get(raw)
-    if isinstance(raw, _kb.KeyCode) and raw.char:
-        c = raw.char.lower()
-        return c if c in 'wasdqe' else None
-    return None
+def _evdev_keyboard_thread(dev):
+    """后台线程: 读取 evdev 键盘事件"""
+    try:
+        for event in dev.read_loop():
+            if event.type == evdev.ecodes.EV_KEY:
+                scancode = event.code
+                value = event.value  # 1=按下, 0=释放, 2=长按重复
+                if scancode in _DIR_SCANCODES:
+                    d = _DIR_SCANCODES[scancode]
+                    if value == 1:      # 按下
+                        _pressed_keys.add(d)
+                    elif value == 0:    # 释放
+                        _pressed_keys.discard(d)
+    except Exception as e:
+        print(f"[KEYBOARD] evdev 设备读取异常: {e}")
 
-def _on_press(key):
-    d = _kb_normalize(key)
-    if d:
-        _pressed_keys.add(d)
+# 启动 evdev 键盘监听
+_kb_devs = _find_keyboards()
 
-def _on_release(key):
-    d = _kb_normalize(key)
-    if d:
-        _pressed_keys.discard(d)
+if not _kb_devs:
+    # 权限不足时, 尝试用 sudo 打开已知键盘设备
+    import glob, os
+    _keyboard_event = "/dev/input/event3"  # AT Translated Set 2 keyboard
+    if os.path.exists(_keyboard_event):
+        try:
+            _dev = evdev.InputDevice(_keyboard_event)
+            _kb_devs = [_dev]
+        except PermissionError:
+            print(f"\n{'='*60}")
+            print("[KEYBOARD] ⚠ 无法访问键盘设备 (Permission denied)")
+            print(f"{'='*60}")
+            print("  原因: Wayland 下 pynput/evdev 需要 /dev/input 权限")
+            print("  修复方法 (任选一种):")
+            print("")
+            print("  方法1: 添加当前用户到 input 组 (推荐, 重启后永久生效)")
+            print("    sudo usermod -aG input $USER")
+            print("    然后注销并重新登录")
+            print("")
+            print("  方法2: 临时修改设备权限 (每次重启后需重新执行)")
+            print("    sudo chmod 666 /dev/input/event*")
+            print("")
+            print("  方法3: 用 sudo 运行本脚本")
+            print(f"    sudo python3 {os.path.abspath(__file__)} ...")
+            print(f"{'='*60}\n")
+        except Exception:
+            pass
 
-_kb_listener = _kb.Listener(on_press=_on_press, on_release=_on_release)
-_kb_listener.daemon = True
-_kb_listener.start()
+for _dev in _kb_devs:
+    _t = threading.Thread(target=_evdev_keyboard_thread, args=(_dev,), daemon=True)
+    _t.start()
+
+if _kb_devs:
+    print(f"[KEYBOARD] evdev: 监听 {len(_kb_devs)} 个键盘设备")
+    for _dev in _kb_devs:
+        print(f"  - {_dev.path}: {_dev.name}")
 
 # --- MuJoCo key_callback: 功能键 ---
 GLFW_KEY_R = 82;  GLFW_KEY_F = 70
@@ -204,7 +260,7 @@ if __name__ == "__main__":
 
     base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym"
     config_path = f"{base}/mujoco/dog/config/{args.config_file}"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/46_terrain_good_1/model_3500.onnx"
+    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_1500_2.onnx"
     xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/xml/dog_terrain.xml"
 
     with open(config_path, "r") as f:
@@ -297,7 +353,7 @@ if __name__ == "__main__":
     print(f"[INFO] 预热完成, norm={np.linalg.norm(obs_history.buffer):.4f}")
     print(f"\n  W/S:前后 A/D:左右 Q/E:转 X:紧急停止 T:重置 Y:打印模型输出")
     print(f"  R:蹲下↓ F:站起↑ Z:重置高度(默认 0.25m)")
-    print(f"  [按住移动，松手即停] 无需窗口焦点, pynput 全局监听\n")
+    print(f"  [按住移动，松手即停] evdev 全局监听, Wayland/X11 通用\n")
 
     with mujoco.viewer.launch_passive(mj_model, mj_data, key_callback=key_callback) as viewer:
         # 设置第三人称跟踪相机

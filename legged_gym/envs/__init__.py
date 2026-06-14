@@ -37,6 +37,7 @@ from legged_gym.envs.go2.go2_config import GO2RoughCfg, GO2RoughCfgPPO
 from legged_gym.envs.aliengo.aliengo_config import AlienGoRoughCfg, AlienGoRoughCfgPPO
 
 from legged_gym.envs.dog.dog_config import DogRoughCfg, DogRoughCfgPPO
+from legged_gym.envs.dog_t.dog_t_config import DogTRoughCfg, DogTRoughCfgPPO
 
 import os
 
@@ -47,3 +48,4 @@ task_registry.register( "go1", LeggedRobot, Go1RoughCfg(), Go1RoughCfgPPO() )
 task_registry.register( "go2", LeggedRobot, GO2RoughCfg(), GO2RoughCfgPPO() )
 task_registry.register( "aliengo", LeggedRobot, AlienGoRoughCfg(), AlienGoRoughCfgPPO() )
 task_registry.register( "dog", LeggedRobot, DogRoughCfg(), DogRoughCfgPPO() )
+task_registry.register( "dog_t", LeggedRobot, DogTRoughCfg(), DogTRoughCfgPPO() )

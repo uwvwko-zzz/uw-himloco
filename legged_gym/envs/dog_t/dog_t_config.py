@@ -1,8 +1,8 @@
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
-class DogRoughCfg( LeggedRobotCfg ):
+class DogTRoughCfg( LeggedRobotCfg ):
     class init_state( LeggedRobotCfg.init_state ):
-        pos = [0.0, 0.0, 0.42] # x,y,z [m] # 0.42
+        pos = [0.0, 0.0, 0.35] # x,y,z [m] # 0.42
 
         # 这里就是假设实物的角度已经在urdf中的0位了，他到default的一个转角的正负
         # 模型里面的电机  值越大，往顺时针转
@@ -79,8 +79,8 @@ class DogRoughCfg( LeggedRobotCfg ):
 
 
     class asset( LeggedRobotCfg.asset ):
-        file = '/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/urdf/dog_1.urdf'
-        name = "dog"             
+        file = '/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog_t/dog_t/urdf/dog_t.urdf'
+        name = "dog_t"             
         foot_name = "foot"            
 
         # penalize_contacts_on = ["thigh", "calf"]  
@@ -156,15 +156,15 @@ class DogRoughCfg( LeggedRobotCfg ):
             # 新增奖励函数
             
             stand_still = -1.0          # 惩罚关节偏离PD目标位置（用joint_pos_target代替default）
-            stand_four_feet = -1.0      # 0 command 时惩罚抬脚，强制4脚着地
-            stand_orientation =  -1.0    #-0.5    # 0 command 时惩罚身体倾斜（前倾/后仰/侧倾）
+            stand_four_feet = -0.0      # 0 command 时惩罚抬脚，强制4脚着地
+            stand_orientation =  -0.0    #-0.5    # 0 command 时惩罚身体倾斜（前倾/后仰/侧倾）
             
             # 对角线步态同步
             diagonal_sync = -0.15
             # 髋关节左右对称
             hip_mirror_symmetry = -0.2      # -0.2
             # 默认姿态线性惩罚
-            default_pos_linear = -0.0      # -0.05
+            default_pos_linear = -0.05      # -0.05
             
             # 惩罚电机输出力矩过大
             torques = -0.0
@@ -177,9 +177,9 @@ class DogRoughCfg( LeggedRobotCfg ):
             # 力矩限位惩罚
             torque_limits = 0.0
 
-class DogRoughCfgPPO( LeggedRobotCfgPPO ):
+class DogTRoughCfgPPO( LeggedRobotCfgPPO ):
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         entropy_coef = 0.01
     class runner( LeggedRobotCfgPPO.runner ):
         run_name = ''
-        experiment_name = 'dog_rough'  # 🔁 建议改为对应名称
+        experiment_name = 'dog_t_rough'  # 🔁 建议改为对应名称

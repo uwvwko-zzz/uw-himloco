@@ -5,6 +5,9 @@ Dog Sim2Sim — IsaacGym → MuJoCo
   MuJoCo XML 顺序 (即 URDF 顺序): FL(0-2), FR(3-5), RR(6-8), RL(9-11)
   IsaacGym dof 顺序 (内部重排):    FL(0-2), FR(3-5), RL(6-8), RR(9-11)
   → 后两条腿反了! 需要 RL/RR 映射!
+
+
+   sudo chmod 666 /dev/input/event*
 """
 import time
 import mujoco
@@ -82,162 +85,135 @@ class ObsHistoryBuffer:
 
 
 # ============================================================
-#  Xbox 手柄控制 (与 dog_policy_test_11.cpp JoyCallback 一致)
-#  左摇杆: 前后/左右 (vy, vx)  右摇杆 X: 转向 (wz)
-#  A: 启动RL  B: 重置  X: 紧急停止  Y: 打印action
-#  RB: 站起  LB: 蹲下  Back: 重置高度  Start: 不用
-#  ============================================================
+#  键盘控制
+#  移动键 (W/A/S/D/Q/E): evdev 监听按下/释放, 即按即动, 松手即停
+#  功能键 (R/F/Z/T/Y/X): MuJoCo key_callback 单次触发
+# ============================================================
 
-import inputs
+# --- evdev: 直接读取 Linux 输入设备 (Wayland/X11 均兼容) ---
+import evdev
 import threading
 
-# 手柄参数 (与 test_11 的 YAML 参数对应)
-JOY_VX_MAX = 1.0      # 左摇杆 Y → 前进最大速度
-JOY_VY_MAX = 1.0      # 左摇杆 X → 侧移最大速度
-JOY_WZ_MAX = 1.0      # 右摇杆 X → 转向最大速度
-JOY_DEADBAND = 0.1    # 死区
-JOY_TIMEOUT_SEC = 0.5 # 超时归零
+def _find_keyboards():
+    """自动检测键盘设备 (支持 EV_KEY 且有字母键)"""
+    keyboards = []
+    for path in evdev.list_devices():
+        try:
+            dev = evdev.InputDevice(path)
+            caps = dev.capabilities()
+            if evdev.ecodes.EV_KEY in caps:
+                keys = caps[evdev.ecodes.EV_KEY]
+                if evdev.ecodes.KEY_W in keys:
+                    keyboards.append(dev)
+                    continue
+        except Exception:
+            pass
+    return keyboards
 
-# 手柄轴映射 (Xbox 标准布局)
-# inputs 库 event.code 直接是 'ABS_X', 'ABS_Y', 'ABS_RX' 等字符串
+_pressed_keys = set()   # 当前正被按住的键 (小写字母)
 
-# 手柄按钮
-BTN_A = 0; BTN_B = 1; BTN_X = 2; BTN_Y = 3
-BTN_LB = 4; BTN_RB = 5; BTN_BACK = 6; BTN_START = 7
+# 方向键映射: evdev scancode → 方向字母
+_DIR_SCANCODES = {
+    evdev.ecodes.KEY_W: 'w', evdev.ecodes.KEY_S: 's',
+    evdev.ecodes.KEY_A: 'a', evdev.ecodes.KEY_D: 'd',
+    evdev.ecodes.KEY_Q: 'q', evdev.ecodes.KEY_E: 'e',
+    evdev.ecodes.KEY_UP: 'w', evdev.ecodes.KEY_DOWN: 's',
+    evdev.ecodes.KEY_LEFT: 'a', evdev.ecodes.KEY_RIGHT: 'd',
+}
+
+def _evdev_keyboard_thread(dev):
+    """后台线程: 读取 evdev 键盘事件"""
+    try:
+        for event in dev.read_loop():
+            if event.type == evdev.ecodes.EV_KEY:
+                scancode = event.code
+                value = event.value  # 1=按下, 0=释放, 2=长按重复
+                if scancode in _DIR_SCANCODES:
+                    d = _DIR_SCANCODES[scancode]
+                    if value == 1:      # 按下
+                        _pressed_keys.add(d)
+                    elif value == 0:    # 释放
+                        _pressed_keys.discard(d)
+    except Exception as e:
+        print(f"[KEYBOARD] evdev 设备读取异常: {e}")
+
+# 启动 evdev 键盘监听
+_kb_devs = _find_keyboards()
+
+if not _kb_devs:
+    # 权限不足时, 尝试用 sudo 打开已知键盘设备
+    import glob, os
+    _keyboard_event = "/dev/input/event3"  # AT Translated Set 2 keyboard
+    if os.path.exists(_keyboard_event):
+        try:
+            _dev = evdev.InputDevice(_keyboard_event)
+            _kb_devs = [_dev]
+        except PermissionError:
+            print(f"\n{'='*60}")
+            print("[KEYBOARD] ⚠ 无法访问键盘设备 (Permission denied)")
+            print(f"{'='*60}")
+            print("  原因: Wayland 下 pynput/evdev 需要 /dev/input 权限")
+            print("  修复方法 (任选一种):")
+            print("")
+            print("  方法1: 添加当前用户到 input 组 (推荐, 重启后永久生效)")
+            print("    sudo usermod -aG input $USER")
+            print("    然后注销并重新登录")
+            print("")
+            print("  方法2: 临时修改设备权限 (每次重启后需重新执行)")
+            print("    sudo chmod 666 /dev/input/event*")
+            print("")
+            print("  方法3: 用 sudo 运行本脚本")
+            print(f"    sudo python3 {os.path.abspath(__file__)} ...")
+            print(f"{'='*60}\n")
+        except Exception:
+            pass
+
+for _dev in _kb_devs:
+    _t = threading.Thread(target=_evdev_keyboard_thread, args=(_dev,), daemon=True)
+    _t.start()
+
+if _kb_devs:
+    print(f"[KEYBOARD] evdev: 监听 {len(_kb_devs)} 个键盘设备")
+    for _dev in _kb_devs:
+        print(f"  - {_dev.path}: {_dev.name}")
+
+# --- MuJoCo key_callback: 功能键 ---
+GLFW_KEY_R = 82;  GLFW_KEY_F = 70
+GLFW_KEY_Z = 90;  GLFW_KEY_T = 84
+GLFW_KEY_Y = 89;  GLFW_KEY_X = 88
 
 # 全局状态
-_gamepad_vx = 0.0
-_gamepad_vy = 0.0
-_gamepad_wz = 0.0
-_gamepad_time = 0.0
-_height_cmd = 0.25
-_reset_flag = False
-_print_action_flag = False
-_start_rl_flag = False
-_stop_flag = False
-
-# 摇杆原始值 (用于平滑更新)
-_raw_lx = 0.0
-_raw_ly = 0.0
-_raw_rx = 0.0
+height_cmd = 0.25
+reset_flag = False
+print_action_flag = False
 
 
-def _apply_deadband(v):
-    return 0.0 if abs(v) < JOY_DEADBAND else v
-
-
-def _detect_gamepads():
-    """检测并列出已连接的手柄设备"""
-    try:
-        devices = inputs.devices.gamepads
-    except Exception as e:
-        print(f"[GAMEPAD] 检测设备失败: {e}")
-        return []
-
-    if not devices:
-        print("[GAMEPAD] 未检测到任何手柄设备!")
-        print("  请检查:")
-        print("    1. 手柄是否已连接 (USB / 蓝牙)")
-        print("    2. ls /dev/input/js* 确认设备节点")
-        print("    3. sudo jstest /dev/input/js0 测试手柄")
-        print("    4. 当前用户是否在 input 组: groups")
-        return []
-
-    print(f"[GAMEPAD] 检测到 {len(devices)} 个手柄设备:")
-    for i, dev in enumerate(devices):
-        print(f"  [{i}] {dev.name}")
-    return devices
-
-
-# 启动时检测
-_gp_devices = _detect_gamepads()
-if _gp_devices:
-    print(f"[GAMEPAD] 使用设备: {_gp_devices[0].name}")
-else:
-    print("[GAMEPAD] 警告: 没有手柄，将在等待状态运行...")
-print()
-
-
-def _gamepad_thread():
-    """后台线程: 持续读取手柄事件"""
-    global _gamepad_vx, _gamepad_vy, _gamepad_wz, _gamepad_time
-    global _height_cmd, _reset_flag, _print_action_flag, _start_rl_flag, _stop_flag
-    global _raw_lx, _raw_ly, _raw_rx
-
-    _gamepad_time = time.time()
-    _event_count = 0
-    _last_warn = time.time()
-
-    print("[GAMEPAD] 读取线程已启动, 等待手柄输入...")
-
-    while not _stop_flag:
-        try:
-            events = inputs.get_gamepad()
-        except inputs.UnpluggedError:
-            if time.time() - _last_warn > 5.0:
-                print("[GAMEPAD] 设备未连接, 等待中... (连接后自动恢复)")
-                _last_warn = time.time()
-            time.sleep(0.5)
-            continue
-        except Exception as e:
-            if time.time() - _last_warn > 5.0:
-                print(f"[GAMEPAD] 读取异常: {e}")
-                _last_warn = time.time()
-            time.sleep(0.1)
-            continue
-
-        for event in events:
-            _event_count += 1
-            if _event_count == 1:
-                print(f"[GAMEPAD] 已收到第一个事件! type={event.ev_type} code={event.code} state={event.state}")
-
-            if event.ev_type == 'Absolute':
-                # Xbox 手柄摇杆范围: -32768 ~ 32767，中心为 0
-                val = event.state / 32768.0 if event.state is not None else 0.0
-
-                if event.code == 'ABS_X':
-                    _raw_lx = val
-                elif event.code == 'ABS_Y':
-                    _raw_ly = val
-                elif event.code == 'ABS_RX':
-                    _raw_rx = val
-
-                # 映射：与 test_11 JoyCallback 一致
-                # 左摇杆 Y 前推为负 → 取反使前推=正速度
-                vx = -_apply_deadband(_raw_ly) * JOY_VX_MAX
-                vy = -_apply_deadband(_raw_lx) * JOY_VY_MAX
-                wz = _apply_deadband(_raw_rx) * JOY_WZ_MAX
-
-                _gamepad_vx = vx
-                _gamepad_vy = vy
-                _gamepad_wz = wz
-                _gamepad_time = time.time()
-
-            elif event.ev_type == 'Key':
-                if event.code == 'BTN_SOUTH' and event.state == 1:     # A
-                    _start_rl_flag = True
-                elif event.code == 'BTN_EAST' and event.state == 1:    # B
-                    _reset_flag = True
-                elif event.code == 'BTN_WEST' and event.state == 1:    # X
-                    pass  # 紧急停止可扩展
-                elif event.code == 'BTN_NORTH' and event.state == 1:   # Y
-                    _print_action_flag = not _print_action_flag
-                elif event.code == 'BTN_RL' and event.state == 1:      # RB
-                    _height_cmd = min(0.35, _height_cmd + 0.02)
-                elif event.code == 'BTN_TL' and event.state == 1:      # LB
-                    _height_cmd = max(0.20, _height_cmd - 0.02)
-
-
-# 启动手柄线程
-_gp_thread = threading.Thread(target=_gamepad_thread, daemon=True)
-_gp_thread.start()
+def key_callback(keycode):
+    """MuJoCo 键盘回调 — 仅处理功能键"""
+    global height_cmd, reset_flag, print_action_flag
+    if keycode == GLFW_KEY_R:
+        height_cmd = max(0.20, height_cmd - 0.02)
+    elif keycode == GLFW_KEY_F:
+        height_cmd = min(0.35, height_cmd + 0.02)
+    elif keycode == GLFW_KEY_Z:
+        height_cmd = 0.25
+    elif keycode == GLFW_KEY_T:
+        reset_flag = True
+    elif keycode == GLFW_KEY_Y:
+        print_action_flag = not print_action_flag
+    elif keycode == GLFW_KEY_X:
+        _pressed_keys.clear()
 
 
 def get_commands():
-    """返回当前手柄速度指令，超时自动归零"""
-    if time.time() - _gamepad_time > JOY_TIMEOUT_SEC:
-        return np.array([0.0, 0.0, 0.0], dtype=np.float32)
-    return np.array([_gamepad_vx, _gamepad_vy, _gamepad_wz], dtype=np.float32)
+    """根据当前按键状态返回指令 — 即按即动, 松手即停"""
+    vx = ( 1.0 if 'w' in _pressed_keys else
+          -1.0 if 's' in _pressed_keys else 0.0)
+    vy = ( 1.0 if 'a' in _pressed_keys else
+          -1.0 if 'd' in _pressed_keys else 0.0)
+    wz = ( 1.0 if 'q' in _pressed_keys else
+          -1.0 if 'e' in _pressed_keys else 0.0)
+    return np.array([vx, vy, wz], dtype=np.float32)
 
 
 def build_single_obs(quat_xyzw, omega, joint_q_isaac, joint_dq_isaac,
@@ -283,9 +259,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym"
-    config_path = f"{base}/mujoco/dog/config/{args.config_file}"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_4500.onnx"
-    xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/xml/dog_terrain.xml"
+    config_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/mujoco/dog_t/config/dog_t.yaml"
+    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/46_plane_good_1/model_1500.onnx"
+    xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog_t/dog_t/xml/dog_t_terrain.xml"
 
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -314,16 +290,40 @@ if __name__ == "__main__":
     HISTORY_LEN      = 6
     NUM_ACTIONS      = 12
 
+    print(f"\n{'='*60}")
+    print(f"[CONFIG] Dog — 带 RL/RR 映射")
+    print(f"{'='*60}")
+    print(f"  IsaacGym dof: FL, FR, RL, RR")
+    print(f"  MuJoCo dof:   FL, FR, RR, RL")
+    print(f"  映射: MUJOCO_TO_ISAAC = {MUJOCO_TO_ISAAC}")
+    print(f"  default_isaac:  {DEFAULT_ANGLES_ISAAC}")
+    print(f"  default_mujoco: {DEFAULT_ANGLES_MUJOCO}")
+    print(f"  kps={kps[0]}, kds={kds[0]}, action_scale={action_scale}")
+    print(f"  tau_limits: hip/thigh={TAU_LIMIT_HIP_THIGH}, calf={TAU_LIMIT_CALF}")
+    print(f"{'='*60}")
+
     mj_model = mujoco.MjModel.from_xml_path(xml_path)
     mj_model.opt.timestep = simulation_dt
     mj_data = mujoco.MjData(mj_model)
 
+    print(f"\n[验证] MuJoCo joint 顺序:")
+    for i in range(mj_model.njnt):
+        jn = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, i)
+        if jn: print(f"  [{i}] {jn}")
+
     reset_robot(mj_model, mj_data, DEFAULT_ANGLES_MUJOCO)
+
+    # 验证: MuJoCo qpos 转换到 Isaac 顺序应该等于 DEFAULT_ANGLES_ISAAC
+    q_isaac = mj_data.qpos[7:19][MUJOCO_TO_ISAAC]
+    print(f"\n[验证] qpos(MuJoCo→Isaac): {q_isaac}")
+    print(f"[验证] 期望(Isaac):         {DEFAULT_ANGLES_ISAAC}")
+    print(f"[验证] {'✓ 一致' if np.allclose(q_isaac, DEFAULT_ANGLES_ISAAC) else '✗ 不一致!'}")
 
     if not args.no_policy:
         policy = ort.InferenceSession(policy_path, providers=['CPUExecutionProvider'])
         input_name  = policy.get_inputs()[0].name
         output_name = policy.get_outputs()[0].name
+        print(f"[ONNX] {policy.get_inputs()[0].shape} → {policy.get_outputs()[0].shape}")
 
     obs_history      = ObsHistoryBuffer(HISTORY_LEN, NUM_ONE_STEP_OBS)
     target_q_mujoco  = DEFAULT_ANGLES_MUJOCO.copy()
@@ -332,6 +332,7 @@ if __name__ == "__main__":
     labels = ["FL_hip","FL_thigh","FL_calf","FR_hip","FR_thigh","FR_calf",
               "RL_hip","RL_thigh","RL_calf","RR_hip","RR_thigh","RR_calf"]
     count = 0
+    inference_count = 0  # 前10次打印 obs，按 y 后打印模型输出
 
     # 预热
     for _ in range(HISTORY_LEN):
@@ -349,14 +350,12 @@ if __name__ == "__main__":
         )
         obs_history.push(obs)
 
-    print(f"[INFO] 预热完成\n")
-    print(f"  ★ Xbox 手柄控制:")
-    print(f"    左摇杆: 前后(vx) 左右(vy)   右摇杆 X: 转向(wz)")
-    print(f"    A: 重置  B: ---  Y: 打印action  X: ---")
-    print(f"    LB: 蹲下↓  RB: 站起↑")
-    print(f"    超时 {JOY_TIMEOUT_SEC}s 无输入 → 自动归零\n")
+    print(f"[INFO] 预热完成, norm={np.linalg.norm(obs_history.buffer):.4f}")
+    print(f"\n  W/S:前后 A/D:左右 Q/E:转 X:紧急停止 T:重置 Y:打印模型输出")
+    print(f"  R:蹲下↓ F:站起↑ Z:重置高度(默认 0.25m)")
+    print(f"  [按住移动，松手即停] evdev 全局监听, Wayland/X11 通用\n")
 
-    with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
+    with mujoco.viewer.launch_passive(mj_model, mj_data, key_callback=key_callback) as viewer:
         # 设置第三人称跟踪相机
         trunk_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "trunk")
         if trunk_id >= 0:
@@ -374,11 +373,13 @@ if __name__ == "__main__":
             # 获取当前指令 (按住运动，松开停止)
             cmd = get_commands()
 
-            if _reset_flag:
+            if reset_flag:
                 reset_robot(mj_model, mj_data, DEFAULT_ANGLES_MUJOCO)
                 obs_history.reset()
-                last_action_isaac[:] = 0; action_isaac[:] = 0; count = 0
-                _reset_flag = False
+                last_action_isaac[:] = 0; action_isaac[:] = 0; count = 0; inference_count = 0
+                print_action_flag = False
+                height_cmd = 0.25
+                reset_flag = False
 
             # 读取 MuJoCo 状态
             joint_q_mujoco  = mj_data.qpos[7:19].astype(np.float64)
@@ -399,14 +400,41 @@ if __name__ == "__main__":
                         last_action_isaac, DEFAULT_ANGLES_ISAAC,
                         cmd, cmd_scale,
                         ang_vel_scale, dof_pos_scale, dof_vel_scale, clip_obs,
-                        height_cmd=_height_cmd
+                        height_cmd=height_cmd
                     )
                     obs_history.push(single_obs)
                     obs_input = obs_history.get()
 
+                    if inference_count < 10:
+                        print(f"\n{'='*60}")
+                        print(f"[推理 #{inference_count}] 完整 276 维 history obs (6帧×46维):")
+                        buf = obs_history.buffer
+                        for slot in range(HISTORY_LEN):
+                            base = slot * 46
+                            frame = buf[base:base+46]
+                            print(f"\n  --- 帧{slot} (offset {base}) ---")
+                            print(f"    cmd:          {frame[0:3]}")
+                            print(f"    gyro_body:    {frame[3:6]}")
+                            print(f"    proj_gravity: {frame[6:9]}")
+                            print(f"    dof_pos_dev:  {np.array2string(frame[9:21], precision=4, separator=', ')}")
+                            print(f"    dof_vel:      {np.array2string(frame[21:33], precision=4, separator=', ')}")
+                            print(f"    last_action:  {np.array2string(frame[33:45], precision=4, separator=', ')}")
+                            print(f"    height_cmd:   {frame[45]:.4f}")
+                            print(f"    frame norm:   {np.linalg.norm(frame):.4f}")
+                        if inference_count == 9:
+                            print(f"\n[INFO] 前10帧 obs 已输出完毕，按 Y 开始打印模型输出。")
+                        print(f"{'='*60}")
+
                     action_raw = policy.run([output_name], {input_name: obs_input})[0][0]
                     action_isaac[:] = np.clip(action_raw, -10.0, 10.0)
                     last_action_isaac = action_isaac.astype(np.float32)
+
+                    if inference_count >= 10 and print_action_flag:
+                        print(f"\n[推理 #{inference_count}] 模型输出 action x {OUTPUT_PRINT_SCALE} (Isaac顺序 FL,FR,RL,RR):")
+                        for j in range(12):
+                            print(f"    {labels[j]:12s}: action={action_isaac[j] * OUTPUT_PRINT_SCALE:+.4f}")
+
+                    inference_count += 1
 
                     # ★ 目标角: IsaacGym顺序 → MuJoCo顺序
                     target_q_isaac = action_isaac * action_scale + DEFAULT_ANGLES_ISAAC
@@ -426,7 +454,7 @@ if __name__ == "__main__":
             if count % (control_decimation * 50) == 0:
                 grav = quat_rotate_inverse(quat_xyzw, np.array([0., 0., -1.]))
                 h = mj_data.qpos[2]
-                print(f"[{time.time()-start:.1f}s] Step {count} H={h:.3f}(cmd={_height_cmd:.2f}) "
+                print(f"[{time.time()-start:.1f}s] Step {count} H={h:.3f}(cmd={height_cmd:.2f}) "
                       f"vx={mj_data.qvel[0]:.2f} vy={mj_data.qvel[1]:.2f} wz={mj_data.qvel[5]:.2f} "
                       f"grav_z={grav[2]:.3f} "
                       f"act=[{action_isaac.min():.2f},{action_isaac.max():.2f}]")

@@ -1582,12 +1582,21 @@ class LeggedRobot(BaseTask):
     #     base_height = self._get_base_heights()
     #     return torch.square(base_height - self.cfg.rewards.base_height_target)
     
+    # def _reward_base_height(self):
+    #     base_height = self._get_base_heights()
+    #     if self.cfg.commands.num_commands >= 5:
+    #         height_target = self.commands[:, 4]
+    #         height_error = base_height - height_target
+    #         return torch.exp(-torch.square(height_error) / 0.005)
+    #     else:
+    #         return torch.square(base_height - self.cfg.rewards.base_height_target)
+    
     def _reward_base_height(self):
         base_height = self._get_base_heights()
         if self.cfg.commands.num_commands >= 5:
             height_target = self.commands[:, 4]
             height_error = base_height - height_target
-            return torch.exp(-torch.square(height_error) / 0.005)
+            return torch.exp(-torch.square(height_error) / self.cfg.rewards.height_tracking_sigma)
         else:
             return torch.square(base_height - self.cfg.rewards.base_height_target)
         
@@ -1676,21 +1685,59 @@ class LeggedRobot(BaseTask):
              5 *torch.abs(self.contact_forces[:, self.feet_indices, 2]), dim=1)
 
     # 静止稳定性        
-    # def _reward_stand_still(self):
-    #     # Penalize motion at zero commands
-    #     return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
-
-    # 静止惩罚（基于关节速度，支持蹲姿等任意静态姿态）
     def _reward_stand_still(self):
+        # Penalize motion at zero commands
+        return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+
+    # 静止惩罚（基于关节位置偏差，支持蹲姿等任意静态姿态）
+    # 用 joint_pos_target 代替 default_dof_pos：PD控制器天然最小化此偏差，惩罚自然消失
+    # def _reward_stand_still(self):
+    #     # 命令接近零时（线速度+角速度都为零）
+    #     stand_mask = (torch.norm(self.commands[:, :2], dim=1) < 0.1).float() \
+    #             * (torch.abs(self.commands[:, 2]) < 0.1).float()
+    #     # 高度正在变化时不触发（蹲起过渡期）
+    #     if self.cfg.commands.num_commands >= 5:
+    #         base_height = self._get_base_heights()
+    #         height_error = torch.abs(base_height - self.commands[:, 4])
+    #         height_stable = (height_error < 0.03).float()  # 3cm以内算稳定
+    #         stand_mask = stand_mask * height_stable
+    #     # 用 PD 目标位置代替 default，支持蹲姿等任意姿态
+    #     return torch.sum(torch.abs(self.dof_pos - self.joint_pos_target), dim=1) * stand_mask
+
+    # 0 command 时强制4脚着地
+    def _reward_stand_four_feet(self):
         # 命令接近零时（线速度+角速度都为零）
         stand_mask = (torch.norm(self.commands[:, :2], dim=1) < 0.1).float() \
                 * (torch.abs(self.commands[:, 2]) < 0.1).float()
-        # 惩罚关节速度
-        dof_pen = torch.sum(torch.abs(self.dof_vel), dim=1)
-        # 惩罚身体移动（线速度+角速度）
-        body_vel_pen = torch.sum(torch.square(self.base_lin_vel[:, :2]), dim=1) \
-                    + torch.square(self.base_ang_vel[:, 2])
-        return (dof_pen + body_vel_pen) * stand_mask
+        # 高度正在变化时不触发（蹲起过渡期）
+        if self.cfg.commands.num_commands >= 5:
+            base_height = self._get_base_heights()
+            height_error = torch.abs(base_height - self.commands[:, 4])
+            height_stable = (height_error < 0.03).float()  # 3cm以内算稳定
+            stand_mask = stand_mask * height_stable
+        # 检查每只脚是否着地（接触力 > 1N）
+        foot_contact = torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) > 1.0  # (num_envs, 4)
+        # 没着地的脚数（0=4脚着地, 1=抬了1只...）
+        lifted_feet = 4.0 - foot_contact.sum(dim=1).float()
+        # 只有 stand_mask=1 时才惩罚
+        return lifted_feet * stand_mask
+
+    # 0 command 时惩罚身体倾斜（前倾/后仰/侧倾），保持水平站立
+    def _reward_stand_orientation(self):
+        # 命令接近零时（线速度+角速度都为零）
+        stand_mask = (torch.norm(self.commands[:, :2], dim=1) < 0.1).float() \
+                * (torch.abs(self.commands[:, 2]) < 0.1).float()
+        # 高度正在变化时不触发（蹲起过渡期）
+        if self.cfg.commands.num_commands >= 5:
+            base_height = self._get_base_heights()
+            height_error = torch.abs(base_height - self.commands[:, 4])
+            height_stable = (height_error < 0.03).float()
+            stand_mask = stand_mask * height_stable
+        # projected_gravity: 身体坐标系下的重力向量
+        # 完全直立时 = [0, 0, -1]，倾斜时 xy 分量非零
+        # 惩罚俯仰(前倾/后仰)和横滚(侧倾)
+        return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1) * stand_mask
+
     # 脚部接触力惩罚
     def _reward_feet_contact_forces(self):
         # penalize high contact forces

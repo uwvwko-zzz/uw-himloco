@@ -1,0 +1,45 @@
+# 仿真时长
+simulation_duration: 300.0
+# 仿真步长时间  
+simulation_dt: 0.005  # Isaac Gym 默认 dt=0.005
+# 多少仿真步进行一次推理
+control_decimation: 4  # Isaac Gym 默认 decimation=4
+
+# PD控制器参数（必须匹配 Isaac Gym）
+# kps: [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20]  # stiffness = 20.0
+# kds: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]  # damping = 0.5
+kps: [40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40]
+kds: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+# 默认关节角度 (MuJoCo/URDF 顺序: FL, FR, RR, RL)
+# 注意: IsaacGym 内部重排为 FL, FR, RL, RR，需要映射（已在代码中处理）
+# 来自 dog_config.py default_joint_angles
+default_angles: [
+    -0.1,  -0.8, -1.5,   # FL  (dof 0-2):  hip=-0.1, thigh=-0.8, calf=-1.5
+     0.1,   0.8,  1.5,   # FR  (dof 3-5):  hip= 0.1, thigh= 0.8, calf= 1.5
+    -0.1,   1.0,  1.5,   # RR  (dof 6-8):  hip=-0.1, thigh= 1.0, calf= 1.5
+     0.1,  -1.0, -1.5,   # RL  (dof 9-11): hip= 0.1, thigh=-1.0, calf=-1.5
+]
+
+# 观测/动作的缩放因子（必须匹配 Isaac Gym）
+ang_vel_scale: 0.25
+dof_pos_scale: 1.0
+dof_vel_scale: 0.05
+action_scale: 0.25  
+cmd_scale: [2.0, 2.0, 0.25, 0.0]  # lin_x, lin_y, ang_z, heading
+
+# 策略输入输出维度
+num_actions: 12
+
+# num_obs: 275   
+
+num_obs: 276                # 46 * 6 = 276 (46维单步观测 × 6步历史)
+num_one_step_obs: 46
+# num_one_step_obs: 45        # 单步观测维度 (45维基础 + 1维高度指令)
+
+# 高度指令参数 (与 Isaac Gym legged_robot.py compute_observations 一致)
+height_cmd_default: 0.25    # 默认身体高度 [m]
+height_cmd_range: [0.2, 0.35]  # 高度指令范围 [m]
+
+# 初始运动指令
+cmd_init: [0.0, 0.0, 0.0]
