@@ -104,7 +104,9 @@ class DogRecoveryCfg(LeggedRobotCfg):
         # 成功判定/高度奖励的目标都跟随 commands[:,4]，|base_height - cmd| < tol 即达标
         stand_height_tolerance = 0.05
         # 成功判定：关节平均偏差 < tol 才算恢复成功（强制回到 default 站姿）
-        recovery_joint_tol = 0.3
+        # 0.3→0.2：原版 0.3 rad(17°) 太松，成功容差允许明显偏离；收紧到 0.2 rad(11°)。
+        # 注意：太紧会让早期策略够不到、训练崩。0.2 是相对安全的中间值。
+        recovery_joint_tol = 0.2
         # 倒地难度课程：roll/pitch 随机范围随训练进度从 init→final
         fall_angle_curriculum_steps = 5000   # 达到最大难度的迭代数
         fall_angle_init = 0.3                # 初始倒地角度上限（rad，约 17°，接近站立的小扰动）
@@ -124,12 +126,16 @@ class DogRecoveryCfg(LeggedRobotCfg):
 
             # ----- 负惩罚（约束项，全程生效，scale 为负）-----
             upside_down_penalty = 2.0  # 倒立惩罚：grav_z>0 时负分（函数内已取负，此处 scale 为正）
-            action_rate = -0.1         # 动作变化率²惩罚（sim2real：抑制电机高频跳变）
+            joint_to_default_penalty = -0.5  # default 近处精修惩罚（upright gate -0.9，温和）：从 -2.0 软化，避免 gate 触发后把腿过早拽到站立姿态导致前扑头着地
+            # 以下 smoothing 项回退到基线值（之前加大 10-400 倍导致翻身发力被压制、头着地，回退后单独重训验证）
+            # 第三组：只把 action_rate 从 -0.1 加到 -0.2（翻一倍，最小幅度），其余 smoothing 保持基线。
+            # 一次只动一项 + 小幅，避免再犯"一次加大 400 倍导致崩"的错误。验证 OK 后下一轮再加 torques/dof_acc。
+            action_rate = -0.2         # 动作变化率²惩罚（基线 -0.1 → 小幅加强到 -0.2）
             lin_vel_xy = -0.5          # 水平线速度²惩罚：恢复任务要求原地站起，不应漂移
             ang_vel_xy = -0.05         # roll/pitch 角速度²惩罚：约束姿态稳定
-            torques = -1e-5            # 力矩²惩罚（sim2real：限制电机出力，防过载）
-            dof_vel = -1e-4            # 关节速度²惩罚（减少机械磨损/驱动器压力）
-            dof_acc = -2.5e-7          # 关节加速度²惩罚（限制冲击，平滑运动）
+            torques = -1e-5            # 力矩²惩罚（基线）
+            dof_vel = -1e-4            # 关节速度²惩罚（基线）
+            dof_acc = -2.5e-7          # 关节加速度²惩罚（基线）
 
             # ----- 必须显式置 0：屏蔽基类 LeggedRobotCfg.rewards.scales 的非零行走任务默认值。
             # 这些项在本任务没有对应的 _reward_ 函数，若继承基类非零值会导致

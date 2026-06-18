@@ -236,6 +236,8 @@ class LeggedRobot(BaseTask):
         # 局部最优的根源。改为：成功只持续给密集奖励，跑到 timeout 才重置，
         # 这样"站得越早、剩余时间拿满分的步数越多"，策略会从"避免成功"翻转为"尽快成功并保持"。
         self.ever_success_buf |= recovered   # 本 episode 内曾成功达标（统计成功率用）
+        # recovery_success 改为每 episode 首次成功才发，置位 already_succeeded_buf 防止倒下重来再刷
+        self.already_succeeded_buf[recovered] = True
 
 
     def reset_idx(self, env_ids):
@@ -284,6 +286,7 @@ class LeggedRobot(BaseTask):
         self.feet_air_time[env_ids] = 0.        # 清除脚部腾空时间
         self.reset_buf[env_ids] = 1             # 标记重置完成
         self.ever_success_buf[env_ids] = False  # 清零本 episode 成功标记，供下一个 episode 重新统计
+        self.already_succeeded_buf[env_ids] = False  # 清零"已领过成功重奖"标记，新 episode 重新可领
 
         # update height measurements
         # 重新测量地形高度
@@ -1176,6 +1179,9 @@ class LeggedRobot(BaseTask):
         # 本 episode 内是否曾经成功达标：取消"成功即终止"后，统计成功率不能只看最后一步，
         # 需要在每步用 |= 累积，reset 时清零。
         self.ever_success_buf = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)    # 本 episode 曾成功达标
+        # 本 episode 内是否已经领过 recovery_success 大奖励：用于把"成功重奖"改成每 episode 只发一次，
+        # 阻断"恢复→倒下→恢复"刷分循环。check_termination 成功时置位，reset 时清零。
+        self.already_succeeded_buf = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)  # 本 episode 已领过成功重奖
 
     # 奖励函数准备函数
     def _prepare_reward_function(self):
@@ -1633,12 +1639,27 @@ class LeggedRobot(BaseTask):
 
     def _reward_joint_to_default(self):
         # 站姿驱动：奖励关节接近 default。err 用均值（不求和）避免梯度过早消失。
+        # sigma 从 1.0 收紧到 0.25：原版在 default 附近太平（偏 0.2rad 就给 0.96 分），
+        # 策略没动力精修；收紧后 default 附近梯度变陡，逼策略把最后 0.1~0.2 rad 推到位。
         err = torch.mean(torch.square(self.dof_pos - self.default_dof_pos), dim=1)
-        return torch.exp(-err / 1.0)
+        return torch.exp(-err / 0.25)
+
+    def _reward_joint_to_default_penalty(self):
+        # default 近处精修惩罚：补 _reward_joint_to_default 在 default 附近梯度太平的缺陷。
+        # |·| 形式（近处梯度陡、远处不至于压垮翻身），返回正值，config 里 scale 为负即惩罚。
+        # upright gate 收到 -0.9：仅在几乎完全正立（倾斜<26°）时才触发，避免翻身末段把腿过早拽到
+        # 站立 default 姿态（身体此时还没平衡）导致前扑头着地。早期用 -0.7（45°）触发过猛。
+        upright_gate = (self.projected_gravity[:, 2] < -0.9).float()
+        err = torch.mean(torch.abs(self.dof_pos - self.default_dof_pos), dim=1)
+        return err * upright_gate
 
     def _reward_recovery_success(self):
-        # 成功重奖：达标(正立+高度+关节)的环境每步拿 10，是破除悬停局部最优的关键。
-        return self.success_buf.float() * 10.0
+        # 每 episode 首次成功才给大奖励（×10），防止"恢复→倒下→恢复"刷分循环。
+        # 已用 already_succeeded_buf 记录"本 episode 是否已领过"，领过就不再发。
+        # success_buf 由 check_termination 每步更新（当前步是否达标）；
+        # already_succeeded_buf 在 check_termination 里成功时置位、reset 时清零。
+        first_success = self.success_buf & ~self.already_succeeded_buf
+        return first_success.float() * 10.0
 
     # ====================================================
     # 负惩罚（约束项，全程生效，线性/平方形式）
@@ -1653,6 +1674,12 @@ class LeggedRobot(BaseTask):
         # 全程生效，压制真机无法跟随的抖动式动作。
         return torch.sum(torch.square(self.actions - self.last_actions), dim=1)
 
+    def _reward_action_rate_upright(self):
+        # 动作变化率惩罚（正立门控加强版）：翻身阶段只用基础 action_rate 轻约束，
+        # 正立后叠加重罚，逼策略在已经站稳时停止抖动/抽搐。
+        upright_gate = (self.projected_gravity[:, 2] < -0.7).float()
+        return torch.sum(torch.square(self.actions - self.last_actions), dim=1) * upright_gate
+
     def _reward_lin_vel_xy(self):
         # 水平线速度惩罚：恢复任务要求原地站起，不应有水平漂移。
         return torch.sum(torch.square(self.base_lin_vel[:, :2]), dim=1)
@@ -1665,6 +1692,12 @@ class LeggedRobot(BaseTask):
         # 力矩惩罚（sim2real 核心）：限制电机出力，防止真机过载/电流尖峰。
         return torch.sum(torch.square(self.torques), dim=1)
 
+    def _reward_torques_upright(self):
+        # 力矩惩罚（正立门控加强版）：翻身需要用力，全程重罚会咬死翻身；
+        # 正立后重罚，逼策略"用最小力保持站立"而非持续大力支撑。
+        upright_gate = (self.projected_gravity[:, 2] < -0.7).float()
+        return torch.sum(torch.square(self.torques), dim=1) * upright_gate
+
     def _reward_dof_vel(self):
         # 关节速度惩罚：限制关节运动速度，减少机械磨损和真机驱动器压力。
         return torch.sum(torch.square(self.dof_vel), dim=1)
@@ -1672,3 +1705,9 @@ class LeggedRobot(BaseTask):
     def _reward_dof_acc(self):
         # 关节加速度惩罚：限制冲击，平滑关节运动。
         return torch.sum(torch.square(self.last_dof_vel - self.dof_vel), dim=1) / self.dt
+
+    def _reward_dof_acc_upright(self):
+        # 关节加速度惩罚（正立门控加强版）：翻身蹬腿必然伴随大加速度，全程重罚会压制翻身；
+        # 正立后重罚，消除站稳后的高频抖动/微冲击。
+        upright_gate = (self.projected_gravity[:, 2] < -0.7).float()
+        return (torch.sum(torch.square(self.last_dof_vel - self.dof_vel), dim=1) / self.dt) * upright_gate

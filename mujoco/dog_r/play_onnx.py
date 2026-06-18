@@ -208,7 +208,7 @@ if __name__ == "__main__":
     # --- 路径 ---
     base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop"
     config_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/mujoco/dog_r/config/dog_r.yaml"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/logs/dog_recovery/model_2200.onnx"
+    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/logs/dog_recovery/model_3100.onnx"
     xml_path     = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/resources/robots/dog/xml/dog.xml"
 
     # --- 加载配置 ---
