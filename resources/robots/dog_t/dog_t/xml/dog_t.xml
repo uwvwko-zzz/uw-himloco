@@ -45,7 +45,7 @@
     <geom name="floor" type="plane" conaffinity="1" condim="3" contype="1" rgba="0.5 0.9 0.9 0.1" material="plane" pos="0 0 0" size="0 0 1"/>
     <body name="base" pos="0 0 0.45">
       <joint type="free"/>
-      <inertial pos="-0.00291826 8.3099e-06 0.00190096" mass="5.0" diaginertia="0.00274553070625574 0.00861431355066298 0.0100690956537535"/>
+      <inertial pos="-0.00291826 8.3099e-06 0.00190096" mass="5.0" diaginertia="0.008287596317455301 0.026002970244409212 0.030394342292371222"/>
       <geom type="mesh" mesh="base" contype="0" conaffinity="0" group="1" rgba="0.10196 0.10196 0.10196 1"/>
       <geom type="box" size="0.1531 0.04675 0.052" rgba="0.5 0.5 0.5 0"/>
       <body name="imu" pos="0.057561 -0.0015639 -0.045474">
@@ -53,7 +53,7 @@
         <geom type="mesh" mesh="imu" contype="0" conaffinity="0" group="1" rgba="0 0 1 1"/>
       </body>
       <body name="radar" pos="0.1335 0 0.12212">
-        <inertial pos="1.98147e-05 0.000180551 -0.030189" mass="0.4" diaginertia="5.42386103463956E-05 4.70635307881123E-05 8.31059100136531E-05"/>
+        <inertial pos="1.98147e-05 0.000180551 -0.030189" mass="0.4" diaginertia="0.00013831122039981267 0.00012001440188189757 0.00021192430563791596"/>
         <geom type="mesh" mesh="radar" contype="0" conaffinity="0" group="1" rgba="0.69804 0.69804 0.69804 1"/>
         <geom type="box" size="0.0275 0.0275 0.0125" pos="0 0 -0.035" rgba="0.5 0.5 0.5 0"/>
         <geom type="sphere" size="0.023" pos="0 0 -0.013" rgba="0.5 0.5 0.5 0"/>
@@ -73,21 +73,21 @@
       </body>
       <body name="FL_hip" pos="0.208697 0.05025 0.00132006">
         <joint name="FL_hip_joint" pos="0 0 0" axis="-1 0 0" range="-1.05 1.05" actuatorfrcrange="-17.0 17.0"/>
-        <inertial pos="-0.0289783 -0.00214363 -0.000132994" mass="0.143241631710664" diaginertia="7.66338147882073E-05 0.000101018392020322 3.71048270650632E-05"/>
+        <inertial pos="-0.010697 -0.0033174 0" mass="0.33292" diaginertia="0.0001789 0.0003417 0.00025417"/>
         <geom type="mesh" mesh="FL_hip" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
         <geom type="cylinder" size="0.04 0.02" pos="0 0.045 0" quat="0.707105 0.707108 0 0" rgba="0.5 0.5 0.5 0"/>
         <body name="FL_thigh" pos="0 0.093 0">
           <joint name="FL_thigh_joint" pos="0 0 0" axis="0 -1 0" range="-1.57 3.49" actuatorfrcrange="-17.0 17.0"/>
-          <inertial pos="-0.00666169 -0.0196507 -0.0588251" mass="0.462326880241278" diaginertia="0.00120255280458884 0.00136250793180148 0.000184938055269308"/>
+          <inertial pos="-0.0069171 -0.014196 -0.040905" mass="1.5467" diaginertia="0.0064369 0.0062486 0.0014778"/>
           <geom type="mesh" mesh="FL_thigh" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
           <geom type="box" size="0.075 0.01225 0.017" pos="0 0 -0.075" quat="0.707105 0 0.707108 0" rgba="0.5 0.5 0.5 0"/>
           <body name="FL_calf" pos="0 -0.0045 -0.219999">
             <joint name="FL_calf_joint" pos="0 0 0" axis="0 1 0" range="-2.72 -1.2" actuatorfrcrange="-25.5 25.5"/>
-            <inertial pos="0.0121407 0 -0.10864" mass="0.128782901044264" diaginertia="0.000668508566483989 0.000679148332772288 1.1237263014755E-05"/>
+            <inertial pos="0.012446 0 -0.11689" mass="0.1266" diaginertia="0.00089879 0.0009089 1.8028E-05"/>
             <geom type="mesh" mesh="FL_calf" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
             <geom type="box" size="0.07 0.008 0.008" pos="0 0 -0.07" quat="0.707105 0 0.707108 0" rgba="0.5 0.5 0.5 0"/>
             <body name="FL_foot" pos="-0.00528282 0 -0.228226">
-              <inertial pos="0.00377057 0.000103517 0.00717306" mass="0.0469571078142026" diaginertia="7.56774988317973E-06 8.00854296276377E-06 8.75161995281717E-06"/>
+              <inertial pos="0 0 0" mass="0.03385" diaginertia="4.3616E-06 4.8375E-06 5.3891E-06"/>
               <geom type="mesh" mesh="FL_foot" contype="0" conaffinity="0" group="1" rgba="0.69804 0.69804 0.69804 1"/>
               <geom type="sphere" size="0.02" rgba="0.5 0.5 0.5 0"/>
             </body>
@@ -96,21 +96,21 @@
       </body>
       <body name="FR_hip" pos="0.208697 -0.05025 0.00132006">
         <joint name="FR_hip_joint" pos="0 0 0" axis="-1 0 0" range="-1.05 1.05" actuatorfrcrange="-17.0 17.0"/>
-        <inertial pos="-0.0289783 0.00214363 0.000132994" mass="0.143241631710665" diaginertia="7.66338147882074E-05 0.000101018392020322 3.71048270650634E-05"/>
+        <inertial pos="-0.010697 0.0033174 0" mass="0.33292" diaginertia="0.0001789 0.0003417 0.00025417"/>
         <geom type="mesh" mesh="FR_hip" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
         <geom type="cylinder" size="0.04 0.02" pos="0 -0.045 0" quat="0.707105 0.707108 0 0" rgba="0.5 0.5 0.5 0"/>
-        <body name="FR_thigh">
+        <body name="FR_thigh" pos="0 -0.093 0">
           <joint name="FR_thigh_joint" pos="0 0 0" axis="0 1 0" range="-1.57 3.49" actuatorfrcrange="-17.0 17.0"/>
-          <inertial pos="-0.00674082 -0.0719504 -0.0588099" mass="0.462326880443323" diaginertia="0.00120257140284864 0.00136250793180536 0.00018491945701372"/>
-          <geom type="mesh" mesh="FR_thigh" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
-          <geom type="box" size="0.075 0.01225 0.017" pos="0 -0.093 -0.075" quat="0.707105 0 0.707108 0" rgba="0.5 0.5 0.5 0"/>
-          <body name="FR_calf" pos="0 -0.0885 -0.22">
+          <inertial pos="-0.0069171 0.014196 -0.040905" mass="1.5467" diaginertia="0.0064369 0.0062486 0.0014778"/>
+          <geom type="mesh" mesh="FR_thigh" contype="0" conaffinity="0" group="1" pos="0 0.093 0" rgba="0.79216 0.81961 0.93333 1"/>
+          <geom type="box" size="0.075 0.01225 0.017" pos="0 0 -0.075" quat="0.707105 0 0.707108 0" rgba="0.5 0.5 0.5 0"/>
+          <body name="FR_calf" pos="0 0.0045 -0.22">
             <joint name="FR_calf_joint" pos="0 0 0" axis="0 -1 0" range="1.2 2.72" actuatorfrcrange="-25.5 25.5"/>
-            <inertial pos="0.0121407 0 -0.10864" mass="0.128782901044264" diaginertia="0.000668508566483986 0.000679148332772254 1.12372630147235E-05"/>
+            <inertial pos="0.012446 0 -0.11689" mass="0.1266" diaginertia="0.00089879 0.0009089 1.8028E-05"/>
             <geom type="mesh" mesh="FR_calf" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
             <geom type="box" size="0.07 0.008 0.008" pos="0 0 -0.07" quat="0.707105 0 0.707108 0" rgba="0.5 0.5 0.5 0"/>
             <body name="FR_foot" pos="-0.00528282 0 -0.228226">
-              <inertial pos="0.00377057 0.000103517 0.00717306" mass="0.0469571075610925" diaginertia="7.56774979491978E-06 8.00854298334071E-06 8.75161987135668E-06"/>
+              <inertial pos="0 0 0" mass="0.03385" diaginertia="4.3616E-06 4.8375E-06 5.3891E-06"/>
               <geom type="mesh" mesh="FR_foot" contype="0" conaffinity="0" group="1" rgba="0.69804 0.69804 0.69804 1"/>
               <geom type="sphere" size="0.02" rgba="0.5 0.5 0.5 0"/>
             </body>
@@ -119,21 +119,21 @@
       </body>
       <body name="RR_hip" pos="-0.210103 -0.05025 0.00132006">
         <joint name="RR_hip_joint" pos="0 0 0" axis="1 0 0" range="-1.05 1.05" actuatorfrcrange="-17.0 17.0"/>
-        <inertial pos="0.0289783 0.00214363 -0.000132994" mass="0.143241631710664" diaginertia="7.6633814788207E-05 0.000101018392020322 3.7104827065063E-05"/>
+        <inertial pos="0.010697 0.0033174 0" mass="0.33292" diaginertia="0.0001789 0.0003417 0.00025417"/>
         <geom type="mesh" mesh="RR_hip" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
         <geom type="cylinder" size="0.04 0.02" pos="0 -0.045 0" quat="0.707105 0.707108 0 0" rgba="0.5 0.5 0.5 0"/>
         <body name="RR_thigh" pos="0 -0.093 0">
           <joint name="RR_thigh_joint" pos="0 0 0" axis="0 1 0" range="-1.57 3.49" actuatorfrcrange="-17.0 17.0"/>
-          <inertial pos="-0.0064568 0.0210496 -0.0583004" mass="0.462326878859773" diaginertia="0.00120472140260792 0.00136250793177641 0.000182769457224981"/>
+          <inertial pos="-0.0069171 0.014196 -0.040905" mass="1.5467" diaginertia="0.0064369 0.0062486 0.0014778"/>
           <geom type="mesh" mesh="RR_thigh" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
           <geom type="box" size="0.075 0.01225 0.017" pos="0 0 -0.075" quat="0.707105 0 0.707108 0" rgba="0.5 0.5 0.5 0"/>
           <body name="RR_calf" pos="0 0.0045 -0.219998">
             <joint name="RR_calf_joint" pos="0 0 0" axis="0 -1 0" range="1.2 2.72" actuatorfrcrange="-25.5 25.5"/>
-            <inertial pos="0.0121407 0 -0.10864" mass="0.128782901044263" diaginertia="0.000668508566483989 0.00067914833277226 1.12372630147269E-05"/>
+            <inertial pos="0.012446 0 -0.11689" mass="0.1266" diaginertia="0.00089879 0.0009089 1.8028E-05"/>
             <geom type="mesh" mesh="RR_calf" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
             <geom type="box" size="0.07 0.008 0.008" pos="0 0 -0.07" quat="0.707105 0 0.707108 0" rgba="0.5 0.5 0.5 0"/>
             <body name="RR_foot" pos="-0.00528282 0 -0.228226">
-              <inertial pos="0.00377057 0.000103517 0.00717306" mass="0.0469571080675473" diaginertia="7.56774997179832E-06 8.00854294215133E-06 8.75162003397204E-06"/>
+              <inertial pos="0 0 0" mass="0.03385" diaginertia="4.3616E-06 4.8375E-06 5.3891E-06"/>
               <geom type="mesh" mesh="RR_foot" contype="0" conaffinity="0" group="1" rgba="0.69804 0.69804 0.69804 1"/>
               <geom type="sphere" size="0.02" rgba="0.5 0.5 0.5 0"/>
             </body>
@@ -142,21 +142,21 @@
       </body>
       <body name="RL_hip" pos="-0.2101 0.05025 0.0013201">
         <joint name="RL_hip_joint" pos="0 0 0" axis="1 0 0" range="-1.05 1.05" actuatorfrcrange="-17.0 17.0"/>
-        <inertial pos="0.0289783 -0.00214363 0.000132994" mass="0.143241631710663" diaginertia="7.66338147882069E-05 0.000101018392020322 3.7104827065063E-05"/>
+        <inertial pos="0.010697 -0.0033174 0" mass="0.33292" diaginertia="0.0001789 0.0003417 0.00025417"/>
         <geom type="mesh" mesh="RL_hip" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
         <geom type="cylinder" size="0.04 0.02" pos="0 0.045 0" quat="0.707105 0.707108 0 0" rgba="0.5 0.5 0.5 0"/>
         <body name="RL_thigh" pos="0 0.093 0">
           <joint name="RL_thigh_joint" pos="0 0 0" axis="0 -1 0" range="-1.57 3.49" actuatorfrcrange="-17.0 17.0"/>
-          <inertial pos="-0.00652934 -0.0196507 -0.0582588" mass="0.462326878748935" diaginertia="0.00120467812367621 0.00136250793177582 0.000182812736156116"/>
+          <inertial pos="-0.0069171 -0.014196 -0.040905" mass="1.5467" diaginertia="0.0064369 0.0062486 0.0014778"/>
           <geom type="mesh" mesh="RL_thigh" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
           <geom type="box" size="0.075 0.01225 0.017" pos="0 0 -0.075" quat="0.707105 0 0.707108 0" rgba="0.5 0.5 0.5 0"/>
           <body name="RL_calf" pos="0 -0.0045 -0.22">
             <joint name="RL_calf_joint" pos="0 0 0" axis="0 1 0" range="-2.72 -1.2" actuatorfrcrange="-25.5 25.5"/>
-            <inertial pos="0.0121407 0 -0.10864" mass="0.128782901044264" diaginertia="0.000668508566483998 0.000679148332772277 1.12372630147354E-05"/>
+            <inertial pos="0.012446 0 -0.11689" mass="0.1266" diaginertia="0.00089879 0.0009089 1.8028E-05"/>
             <geom type="mesh" mesh="RL_calf" contype="0" conaffinity="0" group="1" rgba="0.79216 0.81961 0.93333 1"/>
             <geom type="box" size="0.07 0.008 0.008" pos="0 0 -0.07" quat="0.707105 0 0.707108 0" rgba="0.5 0.5 0.5 0"/>
             <body name="RL_foot" pos="-0.0052828 0 -0.22823">
-              <inertial pos="0.00377057 0.000103517 0.00717306" mass="0.0469571077051346" diaginertia="7.56774983868943E-06 8.00854297105305E-06 8.75161991924642E-06"/>
+              <inertial pos="-5.3573e-06 0 0" mass="0.03385" diaginertia="4.3616E-06 4.8375E-06 5.3891E-06"/>
               <geom type="mesh" mesh="RL_foot" contype="0" conaffinity="0" group="1" rgba="0.69804 0.69804 0.69804 1"/>
               <geom type="sphere" size="0.02" rgba="0.5 0.5 0.5 0"/>
             </body>

@@ -260,8 +260,8 @@ if __name__ == "__main__":
 
     base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym"
     config_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/mujoco/dog_t/config/dog_t.yaml"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/46_plane_good_1/model_1500.onnx"
-    xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog_t/dog_t/xml/dog_t_terrain.xml"
+    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_t_rough/model_3700.onnx"
+    xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog_t/dog_t/xml/dog_t.xml"
 
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -366,6 +366,7 @@ if __name__ == "__main__":
             viewer.cam.azimuth = 135
 
         start = time.time()
+        next_step_time = time.time()   # 累计墙钟对齐基准, 超时的步子能追回
 
         while viewer.is_running() and time.time() - start < simulation_duration:
             step_start = time.time()
@@ -459,9 +460,15 @@ if __name__ == "__main__":
                       f"grav_z={grav[2]:.3f} "
                       f"act=[{action_isaac.min():.2f},{action_isaac.max():.2f}]")
 
-            viewer.sync()
-            elapsed = time.time() - step_start
-            if simulation_dt - elapsed > 0:
-                time.sleep(simulation_dt - elapsed)
+            # 只在显示刷新率附近渲染 (每 control_decimation 步 ≈ 50Hz),
+            # 避免每步都 sync 触发与渲染线程的锁竞争 / GIL 抢占.
+            if count % control_decimation == 0:
+                viewer.sync()
+            # 累计墙钟对齐: 用绝对目标时间 sleep, 某步超时后后续会"不睡"地追回,
+            # 保证整体仿真时间 = 墙钟时间 (1× 实时), 不再累积成慢动作.
+            next_step_time += simulation_dt
+            _sleep = next_step_time - time.time()
+            if _sleep > 0:
+                time.sleep(_sleep)
 
     print("\n[INFO] 仿真结束")
