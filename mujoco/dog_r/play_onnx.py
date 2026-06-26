@@ -12,6 +12,8 @@ Dog 倒地恢复测试 — MuJoCo Sim2Sim (IsaacGym → MuJoCo)
   键盘:
     T:      重置到站立姿态
     F:      重置到随机倒地姿态（测试恢复）
+    B:      重置到背部朝下（四脚朝天，翻 180°）
+    C:      重置到侧翻 90°（侧躺）
     空格:   随机推一下（施加冲击速度）
     R:      降低目标高度
     G:      升高目标高度
@@ -133,30 +135,44 @@ def build_single_obs(quat_xyzw, omega, joint_q_isaac, joint_dq_isaac,
 # ============================================================
 #  重置 / 推倒
 # ============================================================
-def reset_standing(model, data, default_angles_mujoco):
-    """重置到标准站立姿态"""
+def reset_to_pose(model, data, default_angles_mujoco,
+                  roll=0.0, pitch=0.0, yaw=0.0, height=0.42):
+    """重置到指定姿态（roll/pitch/yaw + z 高度 + 默认关节角）"""
     mujoco.mj_resetData(model, data)
-    data.qpos[2] = 0.42
-    data.qpos[3:7] = [1, 0, 0, 0]   # 正立朝向
+    data.qpos[2] = height
+    data.qpos[3:7] = euler_to_quat_wxyz(roll, pitch, yaw)
     data.qpos[7:19] = default_angles_mujoco
     data.qvel[:] = 0
     mujoco.mj_forward(model, data)
+
+
+def reset_standing(model, data, default_angles_mujoco):
+    """重置到标准站立姿态"""
+    reset_to_pose(model, data, default_angles_mujoco,
+                  roll=0.0, pitch=0.0, yaw=0.0, height=0.42)
 
 
 def reset_fallen(model, data, default_angles_mujoco):
     """重置到随机倒地姿态（模拟训练初始化）"""
-    mujoco.mj_resetData(model, data)
-    # 低高度贴地
-    data.qpos[2] = np.random.uniform(0.10, 0.20)
     # 随机 roll/pitch 倒地（全范围 π），yaw 小范围
     roll = np.random.uniform(-np.pi, np.pi)
     pitch = np.random.uniform(-np.pi, np.pi)
     yaw = np.random.uniform(-0.5, 0.5)
-    data.qpos[3:7] = euler_to_quat_wxyz(roll, pitch, yaw)
-    # 关节设为默认角度（也可加随机扰动）
-    data.qpos[7:19] = default_angles_mujoco
-    data.qvel[:] = 0
-    mujoco.mj_forward(model, data)
+    reset_to_pose(model, data, default_angles_mujoco,
+                  roll=roll, pitch=pitch, yaw=yaw,
+                  height=np.random.uniform(0.10, 0.20))
+
+
+def reset_back_down(model, data, default_angles_mujoco):
+    """重置到背部朝下（四脚朝天，翻 180°，grav_z≈+1）"""
+    reset_to_pose(model, data, default_angles_mujoco,
+                  roll=np.pi, pitch=0.0, yaw=0.0, height=0.18)
+
+
+def reset_side(model, data, default_angles_mujoco):
+    """重置到侧翻 90°（侧躺，grav_z≈0）"""
+    reset_to_pose(model, data, default_angles_mujoco,
+                  roll=np.pi / 2, pitch=0.0, yaw=0.0, height=0.16)
 
 
 def apply_push(data):
@@ -173,11 +189,12 @@ def apply_push(data):
 # GLFW keycodes
 GLFW_KEY_T = 84;   GLFW_KEY_F = 70
 GLFW_KEY_R = 82;   GLFW_KEY_G = 71
+GLFW_KEY_B = 66;   GLFW_KEY_C = 67
 GLFW_KEY_Z = 90;   GLFW_KEY_SPACE = 32
 
 # 全局状态
 height_cmd = 0.25
-action_request = None   # 'standing' | 'fallen' | 'push' | None
+action_request = None   # 'standing' | 'fallen' | 'push' | 'back_down' | 'side' | None
 
 
 def key_callback(keycode):
@@ -186,6 +203,10 @@ def key_callback(keycode):
         action_request = 'standing'
     elif keycode == GLFW_KEY_F:
         action_request = 'fallen'
+    elif keycode == GLFW_KEY_B:
+        action_request = 'back_down'
+    elif keycode == GLFW_KEY_C:
+        action_request = 'side'
     elif keycode == GLFW_KEY_SPACE:
         action_request = 'push'
     elif keycode == GLFW_KEY_R:
@@ -208,7 +229,7 @@ if __name__ == "__main__":
     # --- 路径 ---
     base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop"
     config_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/mujoco/dog_r/config/dog_r.yaml"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/logs/dog_recovery/model_3100.onnx"
+    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/logs/dog_recovery/model_4500.onnx"
     xml_path     = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/resources/robots/dog/xml/dog.xml"
 
     # --- 加载配置 ---
@@ -295,6 +316,8 @@ if __name__ == "__main__":
     print(f"  键盘控制:")
     print(f"    T:      重置到站立姿态")
     print(f"    F:      重置到随机倒地姿态")
+    print(f"    B:      重置到背部朝下(四脚朝天)")
+    print(f"    C:      重置到侧翻90°(侧躺)")
     print(f"    空格:   随机推一下")
     print(f"    R/G:    降低/升高目标高度 (当前 {height_cmd:.2f}m)")
     print(f"    Z:      重置目标高度到 0.25m")
@@ -329,7 +352,13 @@ if __name__ == "__main__":
                     q = mj_data.qpos[3:7]
                     quat_xyzw = np.array([q[1], q[2], q[3], q[0]])
                     grav = quat_rotate_inverse(quat_xyzw, np.array([0., 0., -1.]))
-                    print(f"[RESET] -> 倒地姿态  z={mj_data.qpos[2]:.3f}  grav_z={grav[2]:+.3f}")
+                    print(f"[RESET] -> 随机倒地  z={mj_data.qpos[2]:.3f}  grav_z={grav[2]:+.3f}")
+                elif action_request == 'back_down':
+                    reset_back_down(mj_model, mj_data, DEFAULT_ANGLES_MUJOCO)
+                    print(f"[RESET] -> 背部朝下(四脚朝天)  z={mj_data.qpos[2]:.3f}")
+                elif action_request == 'side':
+                    reset_side(mj_model, mj_data, DEFAULT_ANGLES_MUJOCO)
+                    print(f"[RESET] -> 侧翻90°  z={mj_data.qpos[2]:.3f}")
                 elif action_request == 'push':
                     apply_push(mj_data)
                     print("[PUSH] 施加随机冲击")

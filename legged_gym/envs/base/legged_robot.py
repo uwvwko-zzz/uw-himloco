@@ -219,6 +219,16 @@ class LeggedRobot(BaseTask):
         self.time_out_buf = self.episode_length_buf > self.max_episode_length
         self.reset_buf |= self.time_out_buf
 
+        # ===== 更新"近期扰动峰值"（平稳到达门槛用）=====
+        # agitation = ang_vel_xy² + lin_vel_z²：翻滚(高角速度)+腾空(高垂直速度)的合成指标。
+        # 每步取 max(自身×decay, 当前值)，模拟一个带衰减的峰值追踪器——
+        # 即使翻滚后这一帧恰好平稳，前几步的剧烈扰动仍会让峰值维持高位，从而拦住"翻滚到达"。
+        agitation = (torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1)
+                     + torch.square(self.base_lin_vel[:, 2]))
+        decay = self.cfg.rewards.smooth_success_decay
+        self.recent_max_agitation = torch.maximum(
+            self.recent_max_agitation * decay, agitation)
+
         # 严格直立判定：grav_z < -0.9（正立时 grav_z 约为 -1）。
         # 绝不能用 abs()——abs>0.9 会同时命中"完全倒立"(grav_z=+1)，让策略学会翻倒骗奖励。
         upright = self.projected_gravity[:, 2] < -0.9
@@ -229,6 +239,15 @@ class LeggedRobot(BaseTask):
         joint_err = torch.mean(torch.abs(self.dof_pos - self.default_dof_pos), dim=1)
         joint_ok = joint_err < self.cfg.rewards.recovery_joint_tol
         recovered = upright & base_height_ok & joint_ok
+
+        # "平稳到达"门槛：recovered 额外要求近期扰动峰值低于阈值。
+        # 不加门槛时，"大力翻滚恰好落成 default"也算 recovered → 拿到首次成功 ×10，作弊划算。
+        # 加门槛后，翻滚到达时近期峰值很高，不算 recovered，从源头排除作弊。
+        # 注意：此门槛同时影响 ever_success_buf（成功率统计），即"翻滚到达不计入成功"——符合语义。
+        if getattr(self.cfg.rewards, 'smooth_success_enable', False):
+            smooth_ok = self.recent_max_agitation < self.cfg.rewards.smooth_success_threshold
+            recovered = recovered & smooth_ok
+
         self.success_buf = recovered.clone()
         # 不再"成功即终止"：原 reset_buf |= recovered 会让达标环境立刻重置，
         # 策略随即发现"悬停在成功边缘(grav_z≈-0.8)刷满整段 shaping 收益"远高于
@@ -251,6 +270,8 @@ class LeggedRobot(BaseTask):
             # 用 ever_success_buf（本 episode 内任意一步曾达标）统计成功率。
             self.recovery_success_count += int(torch.sum(self.ever_success_buf[env_ids]).item())
             self.recovery_total_count += len(env_ids)
+            # 成功率驱动课程：必须在 ever_success_buf 清零之前调用（读取本 episode 成败标志）
+            self._update_recovery_curriculum(env_ids)
         """ Reset some environments.
             Calls self._reset_dofs(env_ids), self._reset_root_states(env_ids), and self._resample_commands(env_ids)
             [Optional] calls self._update_terrain_curriculum(env_ids), self.update_command_curriculum(env_ids) and
@@ -287,6 +308,7 @@ class LeggedRobot(BaseTask):
         self.reset_buf[env_ids] = 1             # 标记重置完成
         self.ever_success_buf[env_ids] = False  # 清零本 episode 成功标记，供下一个 episode 重新统计
         self.already_succeeded_buf[env_ids] = False  # 清零"已领过成功重奖"标记，新 episode 重新可领
+        self.recent_max_agitation[env_ids] = 0.0     # 清零近期扰动峰值，新 episode 从 0 开始累积
 
         # update height measurements
         # 重新测量地形高度
@@ -322,6 +344,25 @@ class LeggedRobot(BaseTask):
         # 命令课程学习日志
         if self.cfg.commands.curriculum:
             self.extras["episode"]["max_command_x"] = self.command_ranges["lin_vel_x"][1]
+        # ===== 恢复课程诊断（tensorboard + 控制台）=====
+        # 记录当前倒地难度、滚动成功率、近期扰动峰值分布，用于监控课程进度和收紧平稳阈值。
+        if getattr(self.cfg.rewards, 'recovery_curriculum', False):
+            self.extras["episode"]["fall_angle"] = float(self.fall_angle_current)
+            if hasattr(self, 'recent_success_flags') and len(self.recent_success_flags) > 0:
+                rate = sum(self.recent_success_flags) / len(self.recent_success_flags)
+                self.extras["episode"]["recovery_success_rate"] = float(rate)
+        self.extras["episode"]["recent_max_agitation_mean"] = float(torch.mean(self.recent_max_agitation).item())
+        # 低频控制台打印：每 500 全局步一次，便于实时看阈值是否合理
+        if self.common_step_counter % 500 == 0:
+            agit = self.recent_max_agitation
+            gz = self.projected_gravity[:, 2]
+            print(f"[RECOVERY DIAG] step={self.common_step_counter} "
+                  f"fall_angle={getattr(self, 'fall_angle_current', 0):.2f} "
+                  f"rate={sum(getattr(self, 'recent_success_flags', [0]))/max(1,len(getattr(self,'recent_success_flags',[1]))):.2f} "
+                  f"agit(p50/p95/max)={torch.quantile(agit,0.5).item():.1f}/"
+                  f"{torch.quantile(agit,0.95).item():.1f}/{agit.max().item():.1f} "
+                  f"lin_vel_z_rms={torch.sqrt(torch.mean(self.base_lin_vel[:,2]**2)).item():.2f} "
+                  f"ang_xy_rms={torch.sqrt(torch.mean(torch.sum(self.base_ang_vel[:,:2]**2,dim=1))).item():.2f}")
         # send timeout info to the algorithm
         # 超时信息日志
         if self.cfg.env.send_timeouts:
@@ -753,17 +794,27 @@ class LeggedRobot(BaseTask):
     def _reset_root_states(self, env_ids):
         """ 随机倒地初始化（带难度课程）。
 
-        roll/pitch 的随机范围随训练进度从 fall_angle_init（接近直立）递增到
-        fall_angle_final（全方向倒地）；yaw 用小范围（恢复任务不关心朝向）；
+        roll/pitch 的随机范围由难度课程决定（成功率驱动，回退到时间线性兜底）；
+        yaw 用小范围（恢复任务不关心朝向）；
         z 随倒地姿态取合理贴地高度，避免穿地。
         """
         num = len(env_ids)
-        # ===== 倒地难度课程：roll/pitch 范围随 common_step_counter 递增 =====
-        steps = self.cfg.rewards.fall_angle_curriculum_steps
-        t = min(1.0, self.common_step_counter / max(steps, 1))
+        # ===== 倒地难度课程 =====
+        # 当前全局难度 cur_angle（所有环境共享一个角度上限）由两种方式驱动：
+        #   1) 成功率驱动（默认）：用滚动窗口成功率，>up 升一档，<down 降一档。
+        #      避免原"纯时间线性"在策略还没学会时硬推到最高难度导致抽搐/取巧。
+        #   2) 时间线性兜底：当成功率课程关闭、或未收集到足够 episode 时，回退到按
+        #      common_step_counter 线性增长，保证难度无论如何都会推进（防卡死）。
         angle_init = self.cfg.rewards.fall_angle_init
         angle_final = self.cfg.rewards.fall_angle_final
-        cur_angle = angle_init + t * (angle_final - angle_init)
+        if getattr(self.cfg.rewards, 'recovery_curriculum', False) and len(getattr(self, 'recent_success_flags', [])) >= self.cfg.rewards.success_rate_window:
+            cur_angle = self.fall_angle_current
+        else:
+            # 兜底：时间线性（早期没足够 episode 评估成功率时）
+            steps = self.cfg.rewards.fall_angle_curriculum_steps
+            t = min(1.0, self.common_step_counter / max(steps, 1))
+            cur_angle = angle_init + t * (angle_final - angle_init)
+            self.fall_angle_current = cur_angle   # 同步给成功率课程做基线
 
         self.root_states[env_ids, :3] = self.base_init_state[:3]
         self.root_states[env_ids, :3] += self.env_origins[env_ids]
@@ -784,6 +835,42 @@ class LeggedRobot(BaseTask):
         self.gym.set_actor_root_state_tensor_indexed(
             self.sim, gymtorch.unwrap_tensor(self.root_states),
             gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
+    def _update_recovery_curriculum(self, env_ids):
+        """ 成功率驱动的倒地难度课程。
+
+        在 reset_idx 中调用（已有 ever_success_buf 统计）。
+        维护一个滚动窗口的成功标志队列 recent_success_flags（长度=success_rate_window）。
+        每完成一个 episode（env reset），把"该 episode 是否曾成功达标"压入窗口。
+        窗口满后，按成功率升降难度：
+          - rate > success_rate_up   → fall_angle_current 上升一档
+          - rate < success_rate_down → fall_angle_current 下降一档
+        难度在 [fall_angle_init, fall_angle_final] 内，步长 = 区间的 1/20（20 档）。
+        """
+        if not getattr(self.cfg.rewards, 'recovery_curriculum', False):
+            return
+        if not hasattr(self, 'recent_success_flags'):
+            self.recent_success_flags = []
+            self.fall_angle_current = self.cfg.rewards.fall_angle_init
+            self.angle_step = (self.cfg.rewards.fall_angle_final - self.cfg.rewards.fall_angle_init) / 20.0
+        # 把本批 reset 的 episode 成败标志压入滚动窗口
+        if len(env_ids) > 0:
+            flags = self.ever_success_buf[env_ids].cpu().tolist()
+            self.recent_success_flags.extend(flags)
+        window = self.cfg.rewards.success_rate_window
+        # 只保留最近 window 个
+        if len(self.recent_success_flags) > window:
+            self.recent_success_flags = self.recent_success_flags[-window:]
+        # 窗口未满不评估（避免早期样本太少误判）
+        if len(self.recent_success_flags) < window:
+            return
+        rate = sum(self.recent_success_flags) / len(self.recent_success_flags)
+        if rate > self.cfg.rewards.success_rate_up:
+            self.fall_angle_current = min(self.fall_angle_current + self.angle_step,
+                                          self.cfg.rewards.fall_angle_final)
+        elif rate < self.cfg.rewards.success_rate_down:
+            self.fall_angle_current = max(self.fall_angle_current - self.angle_step,
+                                          self.cfg.rewards.fall_angle_init)
 
 
     def _push_robots(self):
@@ -1182,6 +1269,9 @@ class LeggedRobot(BaseTask):
         # 本 episode 内是否已经领过 recovery_success 大奖励：用于把"成功重奖"改成每 episode 只发一次，
         # 阻断"恢复→倒下→恢复"刷分循环。check_termination 成功时置位，reset 时清零。
         self.already_succeeded_buf = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)  # 本 episode 已领过成功重奖
+        # "平稳到达"门槛用的近期扰动峰值缓冲：每步 = max(自身×decay, 当前 agitation)。
+        # 用于 recovered 判定，排除翻滚/腾空作弊到达。agitation = ang_vel_xy² + lin_vel_z²。
+        self.recent_max_agitation = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
 
     # 奖励函数准备函数
     def _prepare_reward_function(self):
@@ -1683,6 +1773,12 @@ class LeggedRobot(BaseTask):
     def _reward_lin_vel_xy(self):
         # 水平线速度惩罚：恢复任务要求原地站起，不应有水平漂移。
         return torch.sum(torch.square(self.base_lin_vel[:, :2]), dim=1)
+
+    def _reward_lin_vel_z(self):
+        # 垂直线速度惩罚（专打腾空翻滚）：平顺起身垂直速度≈0（脚不离地），
+        # 暴力蹬地腾空翻才有大垂直速度。这是区分"平顺起身"与"腾空作弊"最干净的量——
+        # 起身本身几乎不产生垂直速度，故零误伤风险。仅打"跳起来翻"。
+        return torch.square(self.base_lin_vel[:, 2])
 
     def _reward_ang_vel_xy(self):
         # roll/pitch 角速度惩罚：站起过程不应有剧烈翻滚，约束姿态稳定。

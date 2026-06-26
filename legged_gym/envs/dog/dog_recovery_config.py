@@ -108,9 +108,22 @@ class DogRecoveryCfg(LeggedRobotCfg):
         # 注意：太紧会让早期策略够不到、训练崩。0.2 是相对安全的中间值。
         recovery_joint_tol = 0.2
         # 倒地难度课程：roll/pitch 随机范围随训练进度从 init→final
-        fall_angle_curriculum_steps = 5000   # 达到最大难度的迭代数
+        fall_angle_curriculum_steps = 5000   # 达到最大难度的迭代数（时间上限：成功率课程卡死时兜底）
         fall_angle_init = 0.3                # 初始倒地角度上限（rad，约 17°，接近站立的小扰动）
         fall_angle_final = 3.14159           # 最终倒地角度上限（rad，π=全方向倒地）
+        # 成功率驱动课程（替代原纯时间线性课程）：滚动成功率达标才升难度，过低才降。
+        # success_rate_window：统计窗口的 episode 数；up/down：升降阈值。
+        recovery_curriculum = True
+        success_rate_window = 200            # 滚动窗口（episode 数）：太小抖动大，太大反应慢
+        success_rate_up = 0.7                # 窗口成功率 > 此值 → 难度上升一档
+        success_rate_down = 0.3              # 窗口成功率 < 此值 → 难度下降一档
+        # "平稳到达"门槛：recovered 判定额外要求"近期过程扰动 < 阈值"，排除翻滚/腾空作弊到达。
+        # agitation = ang_vel_xy² + lin_vel_z²（翻滚+腾空合成指标）。
+        # 每步 recent_max_agitation = max(自身×decay, 当前agitation)，模拟"近期峰值带衰减"。
+        # threshold 默认宽松（先不误杀），配合诊断日志用真实数据收紧。
+        smooth_success_enable = True         # 是否启用平稳门槛（诊断时可关）
+        smooth_success_decay = 0.9           # 峰值衰减系数：每步旧峰值×0.9，约 10 步(0.2s)半衰
+        smooth_success_threshold = 5.0       # 平稳阈值：agitation 峰值需低于此值才算平稳到达
 
         class scales(LeggedRobotCfg.rewards.scales):
             # ===== 倒地恢复 reward：4 正驱动 + 7 负约束（标准腿足 RL 结构）=====
@@ -132,17 +145,18 @@ class DogRecoveryCfg(LeggedRobotCfg):
             # 一次只动一项 + 小幅，避免再犯"一次加大 400 倍导致崩"的错误。验证 OK 后下一轮再加 torques/dof_acc。
             action_rate = -0.2         # 动作变化率²惩罚（基线 -0.1 → 小幅加强到 -0.2）
             lin_vel_xy = -0.5          # 水平线速度²惩罚：恢复任务要求原地站起，不应漂移
-            ang_vel_xy = -0.05         # roll/pitch 角速度²惩罚：约束姿态稳定
-            torques = -1e-5            # 力矩²惩罚（基线）
+            lin_vel_z = -0.5           # 垂直线速度²惩罚（专打腾空翻滚）：起身垂直速度≈0，零误伤
+            ang_vel_xy = -0.1          # roll/pitch 角速度²惩罚（-0.05 微调到 -0.1，仅小幅，不压翻身）
+            torques = -1e-5            # 力矩²惩罚（基线，保持不动——避免误伤起身力气）
             dof_vel = -1e-4            # 关节速度²惩罚（基线）
-            dof_acc = -2.5e-7          # 关节加速度²惩罚（基线）
+            dof_acc = -1e-6            # 关节加速度²惩罚（-2.5e-7 加重到 -1e-6，打突然猛蹬）
 
             # ----- 必须显式置 0：屏蔽基类 LeggedRobotCfg.rewards.scales 的非零行走任务默认值。
             # 这些项在本任务没有对应的 _reward_ 函数，若继承基类非零值会导致
             # _prepare_reward_function 中 getattr 报 AttributeError。-----
+            # 注意：lin_vel_z 已在上方启用为真实惩罚，不再在此屏蔽。
             tracking_lin_vel = 0.0
             tracking_ang_vel = 0.0
-            lin_vel_z = 0.0
             feet_air_time = 0.0
             collision = 0.0
             feet_stumble = 0.0
