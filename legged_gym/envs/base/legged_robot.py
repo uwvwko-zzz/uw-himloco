@@ -207,6 +207,12 @@ class LeggedRobot(BaseTask):
         """
         # 检查碰撞终止
         self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
+        # 可选的几何摔倒判定，不依赖 URDF 碰撞体命名，避免 base 接触误重置。
+        if getattr(self.cfg.rewards, 'terminate_on_fall', False):
+            relative_height = self.root_states[:, 2] - self.env_origins[:, 2]
+            too_low = relative_height < getattr(self.cfg.rewards, 'min_base_height', 0.12)
+            upside_down = self.projected_gravity[:, 2] > 0.0
+            self.reset_buf |= too_low | upside_down
         # 检查超时
         self.time_out_buf = self.episode_length_buf > self.max_episode_length # no terminal reward for time-outs
         # 合并重置条件
@@ -238,6 +244,11 @@ class LeggedRobot(BaseTask):
         self._reset_dofs(env_ids)               # 重置关节位置和速度
         self._reset_root_states(env_ids)        # 重置机器人的位置、方向、速度
 
+        if hasattr(self, 'platform_episode_mode'):
+            platform_ratio = getattr(self.cfg.commands, 'platform_command_ratio', 0.0)
+            self.platform_episode_mode[env_ids] = \
+                torch.rand(len(env_ids), device=self.device) < platform_ratio
+            self.platform_curriculum_active[env_ids] = self.platform_episode_mode[env_ids]
         self._resample_commands(env_ids)        # 为重置的环境采样新的命令
 
         # reset buffers
@@ -246,6 +257,9 @@ class LeggedRobot(BaseTask):
         self.last_last_actions[env_ids] = 0.    
         self.last_dof_vel[env_ids] = 0.         
         self.feet_air_time[env_ids] = 0.        # 清除脚部腾空时间
+        if self.wall_crossed is not None:       # 清除越墙标记（防刷分状态复位）
+            self.wall_crossed[env_ids] = False
+            self.platform_mounted[env_ids] = False
         self.reset_buf[env_ids] = 1             # 标记重置完成
 
         # update height measurements
@@ -690,9 +704,28 @@ class LeggedRobot(BaseTask):
         else:
             self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
 
+        # dog_high 使用混合命令：多数环境练平台通过，其余环境保留侧移和转向能力。
+        platform_ratio = getattr(self.cfg.commands, 'platform_command_ratio', 0.0)
+        if platform_ratio > 0.0:
+            # 模式在 episode reset 时一次确定，中途重采样只改命令值，不改训练类型。
+            traversal_mask = self.platform_episode_mode[env_ids]
+            traversal_ids = env_ids[traversal_mask]
+            if len(traversal_ids) > 0:
+                max_x = max(abs(self.command_ranges["lin_vel_x"][0]),
+                            abs(self.command_ranges["lin_vel_x"][1]), 0.4)
+                speed = torch_rand_float(0.4, max_x, (len(traversal_ids), 1), device=self.device).squeeze(1)
+                # 高台固定在 +X 方向，平台专项回合也固定向前。
+                self.commands[traversal_ids, 0] = speed
+                self.commands[traversal_ids, 1] = 0.0
+                self.commands[traversal_ids, 2] = 0.0
+                if self.cfg.commands.heading_command:
+                    self.commands[traversal_ids, 3] = 0.0
+
         # 高速环境采样
         high_vel_env_ids = (env_ids < (self.num_envs * 0.2))
         high_vel_env_ids = env_ids[high_vel_env_ids.nonzero(as_tuple=True)]
+        if hasattr(self, 'platform_episode_mode') and len(high_vel_env_ids) > 0:
+            high_vel_env_ids = high_vel_env_ids[~self.platform_episode_mode[high_vel_env_ids]]
         # 为高速环境采样更大的X速度
         self.commands[high_vel_env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(high_vel_env_ids), 1), device=self.device).squeeze(1)
 
@@ -843,18 +876,19 @@ class LeggedRobot(BaseTask):
         if not self.init_done:
             # don't change on initial reset
             return
-        # 计算移动距离
-        distance = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
-        # robots that walked far enough progress to harder terains
-        # 升级到更难地形
-        # 如果机器人从起点走了超过地形长度的一半
-        # 说明机器人有足够的能力应对当前难度
-        # 升级到更难的地形
-        move_up = distance > self.terrain.env_length / 2
-        
-        # robots that walked less than half of their required distance go to simpler terrains
-        # 降级到更简单地形
-        move_down = (distance < torch.norm(self.commands[env_ids, :2], dim=1)*self.max_episode_length_s*0.5) * ~move_up
+        # 平台课程不能用 XY 总位移，否则沿 Y 方向走也会误升级。
+        # spawn 在中心，+X 前方有一个高台：通过 1 个升级，0 个降级。
+        if self.wall_crossed is not None:
+            crossed_count = self.wall_crossed[env_ids].sum(dim=1)
+            curriculum_active = self.platform_curriculum_active[env_ids]
+            move_up = (crossed_count >= 1) & curriculum_active
+            # 只在本回合确实采样过平台通过命令时才降级；
+            # 侧移和转向回合不应因为没过平台被误判失败。
+            move_down = (crossed_count == 0) & curriculum_active & (~move_up)
+        else:
+            distance_x = torch.abs(self.root_states[env_ids, 0] - self.env_origins[env_ids, 0])
+            move_up = distance_x > self.terrain.env_length / 2
+            move_down = ~move_up
         # 调整地形难度       
         self.terrain_levels[env_ids] += 1 * move_up - 1 * move_down
         # Robots that solve the last level are sent to a random one
@@ -1050,6 +1084,22 @@ class LeggedRobot(BaseTask):
         # 初始化足空相时间张量
         self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False) # 脚空相时间
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False) # 上一个接触状态
+        # 越墙追踪：记录每个 env 每道墙是否已奖励过（防刷分），与 cfg.terrain.wall_x_offsets 对齐
+        _wall_offsets = getattr(self.cfg.terrain, 'wall_x_offsets', None)
+        if _wall_offsets is not None and len(_wall_offsets) > 0:
+            self.wall_x_offsets = torch.tensor(_wall_offsets, dtype=torch.float, device=self.device)
+            self.num_walls = len(_wall_offsets)
+            self.wall_crossed = torch.zeros(self.num_envs, self.num_walls, dtype=torch.bool, device=self.device)
+            self.platform_mounted = torch.zeros(self.num_envs, self.num_walls, dtype=torch.bool, device=self.device)
+            self.platform_episode_mode = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            self.platform_curriculum_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        else:
+            self.wall_x_offsets = None
+            self.num_walls = 0
+            self.wall_crossed = None
+            self.platform_mounted = None
+            self.platform_episode_mode = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            self.platform_curriculum_active = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         # 初始身体运动
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])  # 线速度
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13]) # 角速度
@@ -1540,6 +1590,28 @@ class LeggedRobot(BaseTask):
         return feet_height
 
     #------------ reward functions----------------
+    def _reward_alive(self):
+        """Small constant reward so stable locomotion has a clear positive baseline."""
+        return torch.ones(self.num_envs, device=self.device)
+
+    def _near_platform_mask(self, approach_distance=1.0):
+        """Environments approaching or occupying a platform in the commanded X direction."""
+        if self.wall_x_offsets is None:
+            return torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        rel_x = self.root_states[:, 0] - self.env_origins[:, 0]
+        half_length = 0.5 * getattr(self.cfg.terrain, 'platform_length', 1.0)
+        near = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        for offset in self.wall_x_offsets:
+            if offset >= 0:
+                directed_distance = offset - rel_x
+                toward = self.commands[:, 0] > 0.1
+            else:
+                directed_distance = rel_x - offset
+                toward = self.commands[:, 0] < -0.1
+            near |= toward & (directed_distance >= -half_length) \
+                & (directed_distance <= half_length + approach_distance)
+        return near
+
     # 线性速度追踪奖励函数
     def _reward_tracking_lin_vel(self):
         # Tracking of linear velocity commands (xy axes)
@@ -1565,7 +1637,10 @@ class LeggedRobot(BaseTask):
     # 躯干倾斜惩罚 
     def _reward_orientation(self):
         # Penalize non flat base orientation
-        return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+        error = torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+        # 登台时需要短暂俯仰，平台附近仅保留 20% 姿态约束。
+        weight = torch.where(self._near_platform_mask(), 0.2, 1.0)
+        return error * weight
     
     # 关节加速度惩罚
     def _reward_dof_acc(self):
@@ -1612,7 +1687,20 @@ class LeggedRobot(BaseTask):
             footpos_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_footpos_translated[:, i, :])
             footvel_in_body_frame[:, i, :] = quat_rotate_inverse(self.base_quat, cur_footvel_translated[:, i, :])
         
-        height_error = torch.square(footpos_in_body_frame[:, :, 2] - self.cfg.rewards.clearance_height_target).view(self.num_envs, -1)
+        near_platform = self._near_platform_mask()
+        flat_target = getattr(
+            self.cfg.rewards, 'flat_clearance_height_target',
+            self.cfg.rewards.clearance_height_target,
+        )
+        platform_target = getattr(
+            self.cfg.rewards, 'platform_clearance_height_target', flat_target,
+        )
+        target = torch.where(
+            near_platform,
+            torch.full((self.num_envs,), platform_target, device=self.device),
+            torch.full((self.num_envs,), flat_target, device=self.device),
+        ).unsqueeze(1)
+        height_error = torch.square(footpos_in_body_frame[:, :, 2] - target)
         foot_leteral_vel = torch.sqrt(torch.sum(torch.square(footvel_in_body_frame[:, :, :2]), dim=2)).view(self.num_envs, -1)
         return torch.sum(height_error * foot_leteral_vel, dim=1)
     
@@ -1673,10 +1761,91 @@ class LeggedRobot(BaseTask):
         self.last_contacts = contact
         first_contact = (self.feet_air_time > 0.) * contact_filt
         self.feet_air_time += self.dt
-        rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) # reward only on first contact with the ground
+        near_platform = self._near_platform_mask()
+        flat_target = getattr(self.cfg.rewards, 'flat_air_time_target', 0.20)
+        platform_target = getattr(self.cfg.rewards, 'platform_air_time_target', 0.35)
+        air_time_target = torch.where(
+            near_platform,
+            torch.full((self.num_envs,), platform_target, device=self.device),
+            torch.full((self.num_envs,), flat_target, device=self.device),
+        ).unsqueeze(1)
+        rew_airTime = torch.sum((self.feet_air_time - air_time_target) * first_contact, dim=1)
+        # 平地只保留弱步态节律信号，高台附近才使用完整腾空奖励。
+        flat_scale = getattr(self.cfg.rewards, 'flat_air_time_reward_scale', 0.20)
+        region_scale = torch.where(
+            near_platform,
+            torch.ones(self.num_envs, device=self.device),
+            torch.full((self.num_envs,), flat_scale, device=self.device),
+        )
+        rew_airTime *= region_scale
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact_filt
         return rew_airTime
+
+    # 越过高墙奖励：每越过一道墙给一次奖励，同一道墙每 episode 只奖一次（防刷分）。
+    # 返回本步新越过的墙数，框架乘 scales.wall_crossing（再 ×dt）得实际奖励。
+    # 通过程度 = 累计越过墙数，线性叠加；单调（只奖首次越过，来回走不重复给）。
+    def _reward_wall_crossing(self):
+        if self.num_walls == 0:
+            return torch.zeros(self.num_envs, device=self.device)
+        # 机器人相对当前块中心的 X（env_origins 随课程更新，rel_x 实时计算）
+        rel_x = self.root_states[:, 0] - self.env_origins[:, 0]
+        platform_half_length = 0.5 * getattr(self.cfg.terrain, 'platform_length', 0.0)
+        newly_crossed = torch.zeros(self.num_envs, device=self.device)
+        for k in range(self.num_walls):
+            offset = self.wall_x_offsets[k]
+            # 到达平台远端才认定通过，避免到中心就提前获奖。
+            # （分方向判定，避免 spawn 在中心时对负偏移墙误判"已越过"）
+            if offset >= 0:
+                command_toward_platform = self.commands[:, 0] > 0.1
+                crossed_now = (rel_x > offset + platform_half_length) \
+                    & command_toward_platform & (~self.wall_crossed[:, k])
+            else:
+                command_toward_platform = self.commands[:, 0] < -0.1
+                crossed_now = (rel_x < offset - platform_half_length) \
+                    & command_toward_platform & (~self.wall_crossed[:, k])
+            newly_crossed[crossed_now] += 1.0
+            self.wall_crossed[crossed_now, k] = True
+        return newly_crossed
+
+    def _reward_platform_progress(self):
+        """Dense guidance only within one metre of the next platform edge."""
+        command_x = self.commands[:, 0]
+        active = self._near_platform_mask(approach_distance=1.0)
+        active &= self.platform_episode_mode
+        direction = torch.sign(command_x)
+        directed_velocity = direction * self.base_lin_vel[:, 0]
+        # 负值保留逆向运动惩罚，正值限幅避免高速冲撞刷分。
+        return torch.clamp(directed_velocity, min=-1.0, max=1.0) * active.float()
+
+    def _reward_platform_mount(self):
+        """One-shot reward for a stable, foot-supported mount onto each platform."""
+        if self.num_walls == 0:
+            return torch.zeros(self.num_envs, device=self.device)
+
+        rel_x = self.root_states[:, 0] - self.env_origins[:, 0]
+        half_length = 0.5 * getattr(self.cfg.terrain, 'platform_length', 1.0)
+        difficulty = self.terrain_levels.float() / max(1, self.max_terrain_level - 1)
+        platform_height = 0.05 + 0.25 * difficulty
+        relative_base_height = self.root_states[:, 2] - self.env_origins[:, 2]
+        high_enough = relative_base_height > platform_height + 0.20
+        upright = torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1) < 0.35
+        foot_contact = self.contact_forces[:, self.feet_indices, 2] > 1.0
+        supported = foot_contact.sum(dim=1) >= 2
+        reward = torch.zeros(self.num_envs, device=self.device)
+
+        for k in range(self.num_walls):
+            offset = self.wall_x_offsets[k]
+            on_top = torch.abs(rel_x - offset) <= half_length
+            if offset >= 0:
+                toward = self.commands[:, 0] > 0.1
+            else:
+                toward = self.commands[:, 0] < -0.1
+            mounted_now = on_top & toward & high_enough & upright & supported \
+                & (~self.platform_mounted[:, k])
+            reward[mounted_now] += 1.0
+            self.platform_mounted[mounted_now, k] = True
+        return reward
     
     # 绊倒惩罚
     def _reward_stumble(self):
@@ -1754,7 +1923,9 @@ class LeggedRobot(BaseTask):
         # 假设顺序为 FL(0), FR(1), RL(2), RR(3)
         diag1 = torch.abs(contact[:, 0].float() - contact[:, 3].float())  # FL vs RR
         diag2 = torch.abs(contact[:, 1].float() - contact[:, 2].float())  # FR vs RL
-        return (diag1 + diag2) * (torch.norm(self.commands[:, :2], dim=1) > 0.1).float()
+        moving = torch.norm(self.commands[:, :2], dim=1) > 0.1
+        flat_region = ~self._near_platform_mask()
+        return (diag1 + diag2) * moving.float() * flat_region.float()
 
     # 髋关节镜像对称惩罚 — 鼓励左右对称运动
     def _reward_hip_mirror_symmetry(self):

@@ -65,7 +65,8 @@ class Terrain:
     def curiculum(self):
         for j in range(self.cfg.num_cols):
             for i in range(self.cfg.num_rows):
-                difficulty = i / self.cfg.num_rows
+                # 最后一行 difficulty=1.0（最高墙 30cm），第一行 difficulty=0（最矮墙 5cm）
+                difficulty = i / (self.cfg.num_rows - 1) if self.cfg.num_rows > 1 else 1.0
                 choice = j / self.cfg.num_cols + 0.001
 
                 terrain = self.make_terrain(choice, difficulty)
@@ -88,14 +89,8 @@ class Terrain:
 
     
 
-    # 地形工厂
-    # < prop[0]  斜坡（pyramid_slope） 正/负斜坡
-    # < prop[1]  噪声斜坡  随机微起伏
-    # < prop[3]  台阶（stairs） 高度随难度增加
-    # < prop[4]  离散障碍物 随机矩形块
-    # < prop[5]  踩踏石（stepping stones）  石头大小/间距随难度变化
-    # < prop[6]  间隙（gap)  调用自定义
-    # else       坑洞（pit）    调用自定义,pit_terrain
+    # 地形工厂（专训宽顶平台）
+    # difficulty 由课程学习控制：第 0 行最低(5cm)，最后一行最高(30cm)
 
     def make_terrain(self, choice, difficulty):
         terrain = terrain_utils.SubTerrain(   "terrain",
@@ -103,63 +98,16 @@ class Terrain:
                                 length=self.width_per_env_pixels,
                                 vertical_scale=self.cfg.vertical_scale,
                                 horizontal_scale=self.cfg.horizontal_scale)
-        slope = difficulty * 0.4
-        step_height = 0.05 + 0.18 * difficulty
-        discrete_obstacles_height = 0.05 + difficulty * 0.2
-        stepping_stones_size = 1.5 * (1.05 - difficulty)
-        stone_distance = 0.05 if difficulty==0 else 0.1
-        gap_size = 1. * difficulty
-        pit_depth = 1. * difficulty
-        if choice < self.proportions[0]:
-            if choice < self.proportions[0]/ 2:
-                slope *= -1
-            terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
-        elif choice < self.proportions[1]:
-            terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
-            terrain_utils.random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
-        elif choice < self.proportions[3]:
-            if choice<self.proportions[2]:
-                step_height *= -1
-            terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.31, step_height=step_height, platform_size=3.)
-        elif choice < self.proportions[4]:
-            num_rectangles = 20
-            rectangle_min_size = 1.
-            rectangle_max_size = 2.
-            terrain_utils.discrete_obstacles_terrain(terrain, discrete_obstacles_height, rectangle_min_size, rectangle_max_size, num_rectangles, platform_size=3.)
-        elif choice < self.proportions[5]:
-        # else:
-            terrain_utils.stepping_stones_terrain(terrain, stone_size=stepping_stones_size, stone_distance=stone_distance, max_height=0., platform_size=4.)
-        elif choice < self.proportions[6]:
-        
-            t_shaped_stairs_terrain(terrain, horizontal_scale=self.cfg.horizontal_scale, vertical_scale=self.cfg.vertical_scale)
-
-        elif choice < self.proportions[7]:
-            ramp_platform_full_width_terrain(terrain, horizontal_scale=self.cfg.horizontal_scale, vertical_scale=self.cfg.vertical_scale)
-        elif choice < self.proportions[8]:
-            # 不平的地面
-            gravel_chipwood_pit_terrain(terrain,
-                horizontal_scale=self.cfg.horizontal_scale,
-                vertical_scale=self.cfg.vertical_scale
-            )
-        # 碎木
-        elif choice < self.proportions[9]:
-            dense_rubble_pit_terrain(
-                terrain,
-                horizontal_scale=self.cfg.horizontal_scale,
-                vertical_scale=self.cfg.vertical_scale
-            )
-        else :
-            high_wall_terrain(
-                terrain,
-                horizontal_scale=self.cfg.horizontal_scale,
-                vertical_scale=self.cfg.vertical_scale,
-                difficulty=difficulty
-            )
-            
-        # else:
-            # pit_terrain(terrain, depth=pit_depth, platform_size=4.)
-        # else :
-        #     t_shaped_stairs_terrain(terrain, horizontal_scale=self.cfg.horizontal_scale, vertical_scale=self.cfg.vertical_scale)
+        # 专训平台：只生成宽顶平台，难度完全由 difficulty 控制
+        # （choice 参数保留以兼容调用接口，但不再用于地形选择）
+        platform_terrain(
+            terrain,
+            horizontal_scale=self.cfg.horizontal_scale,
+            vertical_scale=self.cfg.vertical_scale,
+            difficulty=difficulty,
+            wall_x_offsets=getattr(self.cfg, 'wall_x_offsets', None),
+            platform_length=getattr(self.cfg, 'platform_length', 0.8),
+        )
         return terrain
 
 # 添加地形
@@ -379,9 +327,8 @@ def t_shaped_stairs_terrain(terrain, horizontal_scale, vertical_scale):
 
 def ramp_platform_full_width_terrain(terrain, horizontal_scale, vertical_scale):
     """
-    全宽地形（Y方向全覆盖）：
+    全宽地形（Y方向全覆盖）：对称三角坡（去掉中间平台，上下坡直接相接于顶点 0.4m）
     - 上斜坡：从 0m 升到 0.4m
-    - 平台：0.4m 高，长 1.0m
     - 下斜坡：从 0.4m 降回 0m
     """
     def to_idx(m):
@@ -393,19 +340,17 @@ def ramp_platform_full_width_terrain(terrain, horizontal_scale, vertical_scale):
     terrain.height_field_raw[:] = 0
 
     # === 参数 ===
-    target_height_m = 0.4          # 平台高度
-    platform_length_m = 1.0        # 平台长度
+    target_height_m = 0.4          # 顶点高度
     slope_angle_deg = 14           # 斜坡角度（上下对称）
 
     angle_rad = np.deg2rad(slope_angle_deg)
     slope_length_m = target_height_m / np.tan(angle_rad)  # 每个斜坡的水平长度
 
     # 转换为网格索引
-    platform_len_idx = to_idx(platform_length_m)
     slope_len_idx = to_idx(slope_length_m)
 
-    # 总长度 = 上坡 + 平台 + 下坡
-    total_len_idx = slope_len_idx + platform_len_idx + slope_len_idx
+    # 总长度 = 上坡 + 下坡（无平台，两坡直接相接于顶点）
+    total_len_idx = slope_len_idx + slope_len_idx
     start_x = (terrain.length - total_len_idx) // 2
     current_x = start_x
 
@@ -418,14 +363,8 @@ def ramp_platform_full_width_terrain(terrain, horizontal_scale, vertical_scale):
             terrain.height_field_raw[x_idx, :] = h  # 全宽
     current_x += slope_len_idx
 
-    # === 2. 平台：0.4m 高 ===
-    platform_h_raw = to_height(target_height_m)
-    plat_end_x = current_x + platform_len_idx
-    if current_x < terrain.length:
-        terrain.height_field_raw[current_x:plat_end_x, :] = platform_h_raw
-    current_x = plat_end_x
-
-    # === 3. 下斜坡：0.4m → 0m ===
+    # === 2. 下斜坡：0.4m → 0m ===
+    # i=0 时 ratio=1.0，下坡首列即 0.4m 顶点，与上坡自然衔接
     for i in range(slope_len_idx):
         ratio = 1.0 - (i / slope_len_idx)  # 从1降到0
         h = to_height(ratio * target_height_m)
@@ -646,15 +585,19 @@ def dense_rubble_pit_terrain(terrain, horizontal_scale, vertical_scale):
 #     # 将整个条状区域抬升到 0.3m
 #     terrain.height_field_raw[start_x_idx:end_x_idx, y_start:y_end] = to_height(height)
 
-def high_wall_terrain(terrain, horizontal_scale, vertical_scale, difficulty=0.5):
+def platform_terrain(terrain, horizontal_scale, vertical_scale, difficulty=0.5,
+                     wall_x_offsets=None, platform_length=1.0):
     """
-    生成 3 道横跨整个地形 Y 轴的高墙。
-    
+    生成多个横跨整个 Y 轴的宽顶平台。
+
     特点：
-    - 每道墙横跨整个 Y 轴，机器人无法绕行。
-    - 墙高：0.3m
-    - 墙厚：0.1m
-    - 3 道墙沿 X 方向分布
+    - 每个平台横跨整个 Y 轴，机器人无法绕行。
+    - 高度随 difficulty 从 0.05m 渐变到 0.30m（课程学习）。
+    - 平台沿 X 方向默认长 0.8m，顶部可稳定落足。
+    - 位置：wall_x_offsets 给出每个平台相对块中心的 X 偏移（米）。
+            默认在 spawn 前方 2m 放置 1 个高台。
+            ⚠️ 必须与 _reward_wall_crossing 读取的 cfg.terrain.wall_x_offsets 完全一致，
+            否则奖励判定的墙位置与实际墙位置错位。
     """
     def to_idx(m):
         return int(round(m / horizontal_scale))
@@ -663,31 +606,78 @@ def high_wall_terrain(terrain, horizontal_scale, vertical_scale, difficulty=0.5)
         return int(round(m / vertical_scale))
 
     # === 尺寸设置 ===
-    height = 0.05 + 0.25 * difficulty  # 从0.05m渐变到0.3m
-    thickness = 0.1
-    num_walls = 3
+    height = 0.05 + 0.25 * difficulty   # 5cm → 30cm
 
-    wall_thickness_idx = to_idx(thickness)
-    wall_height_idx = to_height(height)
+    # 默认布局：每个子地形只放置 1 个高台。
+    if wall_x_offsets is None:
+        wall_x_offsets = [2.0]
+
+    platform_length_idx = max(1, to_idx(platform_length))
+    platform_height_idx = to_height(height)
 
     # 横跨整个 Y 轴
     y_start = 0
     y_end = terrain.width
+    cx = terrain.length // 2  # 块中心（网格索引）
 
-    # === 在 X 方向均匀放置 3 道墙 ===
-    # 例如放在 1/4, 1/2, 3/4 附近
-    x_centers = [
-        terrain.length // 4,
-        terrain.length // 2,
-        3 * terrain.length // 4,
-    ]
-
-    for center_x in x_centers:
-        start_x_idx = center_x - wall_thickness_idx // 2
-        end_x_idx = start_x_idx + wall_thickness_idx
+    # === 按 wall_x_offsets 放置每道墙 ===
+    for offset_m in wall_x_offsets:
+        center_x = cx + to_idx(offset_m)
+        start_x_idx = center_x - platform_length_idx // 2
+        end_x_idx = start_x_idx + platform_length_idx
 
         # 防止越界
         start_x_idx = max(0, start_x_idx)
         end_x_idx = min(terrain.length, end_x_idx)
 
-        terrain.height_field_raw[start_x_idx:end_x_idx, y_start:y_end] = wall_height_idx
+        terrain.height_field_raw[start_x_idx:end_x_idx, y_start:y_end] = platform_height_idx
+
+
+# 兼容仍然导入旧函数名的外部测试脚本。
+high_wall_terrain = platform_terrain
+
+
+def speed_bump_terrain(terrain, horizontal_scale, vertical_scale, difficulty=0.5):
+    """
+    生成 减速带 地形。
+    特点：
+    - 每条减速带横跨整个 Y 轴（全宽），机器人无法绕行。
+    - 梯形横截面：边缘 1cm → 3cm → 顶 5cm(平顶) → 3cm → 1cm，共 6 格宽（0.6m）。
+    - 高度固定 5cm，不随难度缩放；难度只控制减速带的条数。
+    - 条数随课程难度：num_bumps = 1 + round(difficulty * 3)，简单行 1 条、困难行最多 4 条。
+    - 各条减速带沿 X 方向均匀分布。
+    """
+    def to_idx(m):
+        return int(round(m / horizontal_scale))
+
+    def to_height(m):
+        return int(round(m / vertical_scale))
+
+    # === 先将整个地形块初始化为平地（高度0）===
+    terrain.height_field_raw[:] = 0
+
+    # === 几何参数（固定不缩放）===
+    # 梯形横截面：单位 [m]，从一侧边缘到另一侧
+    # [1cm, 3cm, 5cm, 5cm, 3cm, 1cm] → 共 6 格宽（0.6m）
+    profile_m = [0.01, 0.03, 0.05, 0.05, 0.03, 0.01]
+    profile_idx = [to_height(h) for h in profile_m]
+
+    # 横跨整个 Y 轴
+    y_start = 0
+    y_end = terrain.width
+
+    # 条数随课程难度（每条几何不变，仍是固定 5cm 梯形）
+    num_bumps = 1 + int(round(difficulty * 3))
+
+    # === 沿 X 方向均匀放置减速带 ===
+    bump_width = len(profile_idx)  # 6
+    for k in range(num_bumps):
+        center_x = int(terrain.length * (k + 1) / (num_bumps + 1))
+        start_x_idx = center_x - bump_width // 2
+
+        # 按梯形轮廓逐列写入高度
+        for i, h_idx in enumerate(profile_idx):
+            x_idx = start_x_idx + i
+            # 防止越界
+            if 0 <= x_idx < terrain.length:
+                terrain.height_field_raw[x_idx, y_start:y_end] = h_idx

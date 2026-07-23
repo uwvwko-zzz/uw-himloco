@@ -32,7 +32,7 @@ from .base_config import BaseConfig
 
 class LeggedRobotCfg(BaseConfig):
     class env:
-        # num_envs = 4096                                     # go2 3700的环境启动
+        # num_envs = 2048                                     # go2 3700的环境启动
         num_envs = 100
         num_one_step_observations = 46      # 单次观测维度+高度命令
         # num_one_step_observations = 45
@@ -49,8 +49,8 @@ class LeggedRobotCfg(BaseConfig):
         episode_length_s = 20 # episode length in seconds
 
     class terrain:
-        # mesh_type = 'trimesh' # "heightfield" # none, plane, heightfield or trimesh
-        mesh_type = 'plane'
+        mesh_type = 'trimesh' # "heightfield" # none, plane, heightfield or trimesh
+        # mesh_type = 'plane'
         horizontal_scale = 0.1      # 水平缩放比例   [m]
         vertical_scale = 0.005      # 垂直缩放比例   [m]
         border_size = 25            # 边界大小      [m]
@@ -72,22 +72,12 @@ class LeggedRobotCfg(BaseConfig):
         # 地形行列
         num_rows= 10 # number of terrain rows (levels)
         num_cols = 20 # number of terrain cols (types)
-        # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete]
-        # 比例
-        # 稍微不平的地
-        # 第2位是不平的地板
-        # 第3位是大楼梯
-        # 第4位是大楼梯
-        # 第5位是踩踏石（就是不平的地形）
-        # 第6位是间隙
-        # 第7位是长台阶
-        # 第8位是斜坡1
-        # 第9位是更不平的地面
-        # 第10位是碎木
-        # 第11是墙
-        # terrain_proportions = [0.1, 0.1, 0.0, 0.0, 0.1, 0.0, 0.30, 0.10,0.0,0.0,0.3]
-        terrain_proportions = [0.1, 0.15, 0.0, 0.0, 0.2, 0.0, 0.4, 0.15, 0.0, 0.0,0.0]
-        # terrain_proportions = [0.1, 0.2, 0.3, 0.3, 0.1]
+        # 专训高墙：make_terrain 已统一生成 high_wall，不再按 choice 分支选择地形类型，
+        # 因此 terrain_proportions 实际不再影响地形分布，这里仅保留接口（累积概率 = [1.0]）。
+        terrain_proportions = [1.0]
+        # 多道高墙相对块中心的 X 偏移（米）。None=不启用越墙奖励；设为列表则地形与奖励都按此布局。
+        # 默认 None，需在具体任务 config 中覆盖（如 dog_high 设为 4 道对称墙）。
+        wall_x_offsets = None
         # trimesh only:
         slope_treshold = 0.75 # slopes above this threshold will be corrected to vertical surfaces
 
