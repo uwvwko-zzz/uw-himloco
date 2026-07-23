@@ -41,16 +41,16 @@ def main():
             'RR_hip_joint': -0.1,   # [rad]                      
 
             'FL_thigh_joint': -0.8,     # [rad]               
-            'RL_thigh_joint': -1.,   # [rad]                    
+            'RL_thigh_joint': -1.1,   # [rad]                    
             'FR_thigh_joint': 0.8,     # [rad]                
-            'RR_thigh_joint': 1.,   # [rad]             
+            'RR_thigh_joint': 1.1,   # [rad]             
 
 
             # -1.78  虽然说这个关节rviz显示的0,但是实际上是-1.78
-            'FL_calf_joint': -1.5,   # [rad]                    
-            'RL_calf_joint': -1.5,    # [rad]            
-            'FR_calf_joint': 1.5,  # [rad]                      
-            'RR_calf_joint': 1.5,    # [rad]                   
+            'FL_calf_joint': -1.9,   # [rad]                    
+            'RL_calf_joint': -1.9,    # [rad]            
+            'FR_calf_joint': 1.9,  # [rad]                      
+            'RR_calf_joint': 1.9,    # [rad]                   
         }
 
     

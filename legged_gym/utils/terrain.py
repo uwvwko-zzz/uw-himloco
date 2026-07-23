@@ -148,8 +148,15 @@ class Terrain:
                 horizontal_scale=self.cfg.horizontal_scale,
                 vertical_scale=self.cfg.vertical_scale
             )
-        else :
+        elif choice < self.proportions[10]:
             high_wall_terrain(
+                terrain,
+                horizontal_scale=self.cfg.horizontal_scale,
+                vertical_scale=self.cfg.vertical_scale,
+                difficulty=difficulty
+            )
+        else:
+            speed_bump_terrain(
                 terrain,
                 horizontal_scale=self.cfg.horizontal_scale,
                 vertical_scale=self.cfg.vertical_scale,
@@ -379,9 +386,8 @@ def t_shaped_stairs_terrain(terrain, horizontal_scale, vertical_scale):
 
 def ramp_platform_full_width_terrain(terrain, horizontal_scale, vertical_scale):
     """
-    全宽地形（Y方向全覆盖）：
+    全宽地形（Y方向全覆盖）：对称三角坡（去掉中间平台，上下坡直接相接于顶点 0.4m）
     - 上斜坡：从 0m 升到 0.4m
-    - 平台：0.4m 高，长 1.0m
     - 下斜坡：从 0.4m 降回 0m
     """
     def to_idx(m):
@@ -393,19 +399,17 @@ def ramp_platform_full_width_terrain(terrain, horizontal_scale, vertical_scale):
     terrain.height_field_raw[:] = 0
 
     # === 参数 ===
-    target_height_m = 0.4          # 平台高度
-    platform_length_m = 1.0        # 平台长度
+    target_height_m = 0.4          # 顶点高度
     slope_angle_deg = 14           # 斜坡角度（上下对称）
 
     angle_rad = np.deg2rad(slope_angle_deg)
     slope_length_m = target_height_m / np.tan(angle_rad)  # 每个斜坡的水平长度
 
     # 转换为网格索引
-    platform_len_idx = to_idx(platform_length_m)
     slope_len_idx = to_idx(slope_length_m)
 
-    # 总长度 = 上坡 + 平台 + 下坡
-    total_len_idx = slope_len_idx + platform_len_idx + slope_len_idx
+    # 总长度 = 上坡 + 下坡（无平台，两坡直接相接于顶点）
+    total_len_idx = slope_len_idx + slope_len_idx
     start_x = (terrain.length - total_len_idx) // 2
     current_x = start_x
 
@@ -418,14 +422,8 @@ def ramp_platform_full_width_terrain(terrain, horizontal_scale, vertical_scale):
             terrain.height_field_raw[x_idx, :] = h  # 全宽
     current_x += slope_len_idx
 
-    # === 2. 平台：0.4m 高 ===
-    platform_h_raw = to_height(target_height_m)
-    plat_end_x = current_x + platform_len_idx
-    if current_x < terrain.length:
-        terrain.height_field_raw[current_x:plat_end_x, :] = platform_h_raw
-    current_x = plat_end_x
-
-    # === 3. 下斜坡：0.4m → 0m ===
+    # === 2. 下斜坡：0.4m → 0m ===
+    # i=0 时 ratio=1.0，下坡首列即 0.4m 顶点，与上坡自然衔接
     for i in range(slope_len_idx):
         ratio = 1.0 - (i / slope_len_idx)  # 从1降到0
         h = to_height(ratio * target_height_m)
@@ -691,3 +689,49 @@ def high_wall_terrain(terrain, horizontal_scale, vertical_scale, difficulty=0.5)
         end_x_idx = min(terrain.length, end_x_idx)
 
         terrain.height_field_raw[start_x_idx:end_x_idx, y_start:y_end] = wall_height_idx
+
+
+def speed_bump_terrain(terrain, horizontal_scale, vertical_scale, difficulty=0.5):
+    """
+    生成 减速带 地形。
+    特点：
+    - 每条减速带横跨整个 Y 轴（全宽），机器人无法绕行。
+    - 梯形横截面：边缘 1cm → 3cm → 顶 5cm(平顶) → 3cm → 1cm，共 6 格宽（0.6m）。
+    - 高度固定 5cm，不随难度缩放；难度只控制减速带的条数。
+    - 条数随课程难度：num_bumps = 1 + round(difficulty * 3)，简单行 1 条、困难行最多 4 条。
+    - 各条减速带沿 X 方向均匀分布。
+    """
+    def to_idx(m):
+        return int(round(m / horizontal_scale))
+
+    def to_height(m):
+        return int(round(m / vertical_scale))
+
+    # === 先将整个地形块初始化为平地（高度0）===
+    terrain.height_field_raw[:] = 0
+
+    # === 几何参数（固定不缩放）===
+    # 梯形横截面：单位 [m]，从一侧边缘到另一侧
+    # [1cm, 3cm, 5cm, 5cm, 3cm, 1cm] → 共 6 格宽（0.6m）
+    profile_m = [0.01, 0.03, 0.05, 0.05, 0.03, 0.01]
+    profile_idx = [to_height(h) for h in profile_m]
+
+    # 横跨整个 Y 轴
+    y_start = 0
+    y_end = terrain.width
+
+    # 条数随课程难度（每条几何不变，仍是固定 5cm 梯形）
+    num_bumps = 1 + int(round(difficulty * 3))
+
+    # === 沿 X 方向均匀放置减速带 ===
+    bump_width = len(profile_idx)  # 6
+    for k in range(num_bumps):
+        center_x = int(terrain.length * (k + 1) / (num_bumps + 1))
+        start_x_idx = center_x - bump_width // 2
+
+        # 按梯形轮廓逐列写入高度
+        for i, h_idx in enumerate(profile_idx):
+            x_idx = start_x_idx + i
+            # 防止越界
+            if 0 <= x_idx < terrain.length:
+                terrain.height_field_raw[x_idx, y_start:y_end] = h_idx

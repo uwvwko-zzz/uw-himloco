@@ -2,6 +2,24 @@
 
 基于 [Isaac Gym](https://developer.nvidia.com/isaac-gym) 的四足机器人强化学习 locomotion 训练框架，实现自 [HIMLoco (Hybrid Internal Model)](https://arxiv.org/abs/2312.11460) 和 [H-Infinity Locomotion Control](https://arxiv.org/abs/2404.14405) 论文。支持从仿真训练到 MuJoCo sim2sim 验证、ONNX 模型导出的完整流程。
 
+## 🌿 分支说明（Branches）
+
+本仓库在 GitHub 上以多分支形式组织，**每个分支对应一套独立的训练框架**，各自带有完整的 `legged_gym/`（环境、配置、脚本），并共享同一份 `rsl_rl/` 算法库。你当前所在的 `main` 分支即为本框架（正常 locomotion）。
+
+| 分支 | 对应目录 | 任务 | 任务名 | 说明 |
+|------|---------|------|--------|------|
+| **`main`** ⭐ | `himloco_gym/` | 正常 locomotion | `dog` | **当前分支**。平地 / 复杂地形行走、速度跟踪、高度调节，含 MuJoCo sim2sim 验证与 ONNX 导出完整流程 |
+| `hip` | `himloco_hop/` | 倾倒恢复（Recovery） | `dog_recovery` | 从任意倒地姿态学会站起来，恢复到 default 站立姿态，含倒地难度课程学习与成功率批量评估 |
+| `high` | `himloco_high/` | 上高墙（High wall climbing） | `dog_high` | 在 46 维观测（含高度指令）基础上训练攀爬高墙 / 登上宽顶平台，核心奖励为 `wall_crossing` / `platform_mount` |
+
+> 切换分支即可获取对应框架的全部代码与说明：
+> ```bash
+> git checkout main     # 正常 locomotion（本分支）
+> git checkout hip      # 倾倒恢复
+> git checkout high     # 上高墙
+> ```
+> 各分支根目录均有独立的 `README.md`，详细介绍其任务设计、观测 / 动作空间、奖励函数与使用方法。
+
 ## 项目结构
 
 ```
@@ -254,43 +272,4 @@ python mujoco/scripts/urdf_to_xml.py
 himloco_gym/logs/<experiment_name>/<run_name>/
 ```
 
-## 关键算法文件
-
-算法实现位于 `rsl_rl/` 目录：
-
-| 文件 | 说明 |
-|------|------|
-| `rsl_rl/algorithms/him_ppo.py` | HIM PPO 算法实现 |
-| `rsl_rl/modules/him_actor_critic.py` | HIM Actor-Critic 网络 |
-| `rsl_rl/modules/him_estimator.py` | HIM Estimator 模块 |
-| `rsl_rl/runners/him_on_policy_runner.py` | HIM 在策略训练器 |
-| `rsl_rl/storage/him_rollout_storage.py` | HIM 数据存储 |
-
-## 许可证
-
-本项目的代码基于 [BSD-3-Clause](LICENSE) 许可证。
-
-## 致谢
-
-- [legged_gym](https://github.com/leggedrobotics/legged_gym) — 本项目的代码基础
-- [Isaac Gym](https://developer.nvidia.com/isaac-gym) — NVIDIA 物理仿真环境
-
-## 引用
-
-如果本项目对您有帮助，请引用：
-
-```bibtex
-@inproceedings{long2023him,
-  title={Hybrid Internal Model: Learning Agile Legged Locomotion with Simulated Robot Response},
-  author={Long, Junfeng and Wang, ZiRui and Li, Quanyi and Cao, Liu and Gao, Jiawei and Pang, Jiangmiao},
-  booktitle={The Twelfth International Conference on Learning Representations},
-  year={2024}
-}
-
-@misc{long2024hinf,
-  title={Learning H-Infinity Locomotion Control}, 
-  author={Junfeng Long and Wenye Yu and Quanyi Li and Zirui Wang and Dahua Lin and Jiangmiao Pang},
-  year={2024},
-  eprint={2404.14405},
-  archivePrefix={arXiv},
-}
+## qq:2478920603

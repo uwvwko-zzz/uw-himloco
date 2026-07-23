@@ -137,11 +137,11 @@ def long_t_shaped_stairs_terrain(terrain, horizontal_scale, vertical_scale):
         if x0 < terrain.length:
             terrain.height_field_raw[x0:x1, :] = h
 
+
 def ramp_platform_full_width_terrain(terrain, horizontal_scale, vertical_scale):
     """
-    全宽地形（Y方向全覆盖）：
+    全宽地形（Y方向全覆盖）：对称三角坡（去掉中间平台，上下坡直接相接于顶点 0.4m）
     - 上斜坡：从 0m 升到 0.4m
-    - 平台：0.4m 高，长 1.0m
     - 下斜坡：从 0.4m 降回 0m
     """
     def to_idx(m):
@@ -153,19 +153,17 @@ def ramp_platform_full_width_terrain(terrain, horizontal_scale, vertical_scale):
     terrain.height_field_raw[:] = 0
 
     # === 参数 ===
-    target_height_m = 0.4          # 平台高度
-    platform_length_m = 1.0        # 平台长度
+    target_height_m = 0.4          # 顶点高度
     slope_angle_deg = 14           # 斜坡角度（上下对称）
 
     angle_rad = np.deg2rad(slope_angle_deg)
     slope_length_m = target_height_m / np.tan(angle_rad)  # 每个斜坡的水平长度
 
     # 转换为网格索引
-    platform_len_idx = to_idx(platform_length_m)
     slope_len_idx = to_idx(slope_length_m)
 
-    # 总长度 = 上坡 + 平台 + 下坡
-    total_len_idx = slope_len_idx + platform_len_idx + slope_len_idx
+    # 总长度 = 上坡 + 下坡（无平台，两坡直接相接于顶点）
+    total_len_idx = slope_len_idx + slope_len_idx
     start_x = (terrain.length - total_len_idx) // 2
     current_x = start_x
 
@@ -178,20 +176,15 @@ def ramp_platform_full_width_terrain(terrain, horizontal_scale, vertical_scale):
             terrain.height_field_raw[x_idx, :] = h  # 全宽
     current_x += slope_len_idx
 
-    # === 2. 平台：0.4m 高 ===
-    platform_h_raw = to_height(target_height_m)
-    plat_end_x = current_x + platform_len_idx
-    if current_x < terrain.length:
-        terrain.height_field_raw[current_x:plat_end_x, :] = platform_h_raw
-    current_x = plat_end_x
-
-    # === 3. 下斜坡：0.4m → 0m ===
+    # === 2. 下斜坡：0.4m → 0m ===
+    # i=0 时 ratio=1.0，下坡首列即 0.4m 顶点，与上坡自然衔接
     for i in range(slope_len_idx):
         ratio = 1.0 - (i / slope_len_idx)  # 从1降到0
         h = to_height(ratio * target_height_m)
         x_idx = current_x + i
         if 0 <= x_idx < terrain.length:
             terrain.height_field_raw[x_idx, :] = h  # 全宽
+
 
 def gravel_chipwood_pit_terrain(terrain, horizontal_scale, vertical_scale):
     """
@@ -772,7 +765,7 @@ def play(args):
     )
     
     # === 手动指定完整路径加载（关键修复）===
-    policy_path = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/Jun12_17-57-07_/model_2000.pt"
+    policy_path = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/model_3400.pt"
     print(f"[INFO] Loading policy from: {policy_path}")
     
     # 直接调用 runner.load() 传入完整路径

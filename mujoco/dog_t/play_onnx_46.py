@@ -254,14 +254,13 @@ def reset_robot(model, data, default_angles_mujoco):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("config_file", type=str)
     parser.add_argument("--no-policy", action="store_true")
     args = parser.parse_args()
 
     base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym"
     config_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/mujoco/dog_t/config/dog_t.yaml"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_t_rough/model_3700.onnx"
-    xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog_t/dog_t/xml/dog_t.xml"
+    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_t_rough/model_2000.onnx"
+    xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog_t/dog_t/xml/dog_t_terrain.xml"
 
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)

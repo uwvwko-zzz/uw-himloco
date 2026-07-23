@@ -155,16 +155,16 @@ class DogRoughCfg( LeggedRobotCfg ):
             smoothness = -0.02
             # 新增奖励函数
             
-            stand_still = -1.0          # 惩罚关节偏离PD目标位置（用joint_pos_target代替default）
-            stand_four_feet = -1.0      # 0 command 时惩罚抬脚，强制4脚着地
-            stand_orientation =  -1.0    #-0.5    # 0 command 时惩罚身体倾斜（前倾/后仰/侧倾）
+            stand_still = -1.0          # 惩罚关节偏离PD目标位置（joint_pos_target/default）
+            stand_four_feet = -1.0      # 0 command 时惩罚抬脚，强制4脚着地（joint_pos_target）
+            stand_orientation =  -1.0    #-0.5    # 0 command 时惩罚身体倾斜（joint_pos_target）
             
             # 对角线步态同步
             diagonal_sync = -0.15
             # 髋关节左右对称
             hip_mirror_symmetry = -0.2      # -0.2
             # 默认姿态线性惩罚
-            default_pos_linear = -0.0      # -0.05
+            default_pos_linear = -0.05      # -0.05
             
             # 惩罚电机输出力矩过大
             torques = -0.0

@@ -49,8 +49,8 @@ class LeggedRobotCfg(BaseConfig):
         episode_length_s = 20 # episode length in seconds
 
     class terrain:
-        # mesh_type = 'trimesh' # "heightfield" # none, plane, heightfield or trimesh
-        mesh_type = 'plane'
+        mesh_type = 'trimesh' # "heightfield" # none, plane, heightfield or trimesh
+        # mesh_type = 'plane'
         horizontal_scale = 0.1      # 水平缩放比例   [m]
         vertical_scale = 0.005      # 垂直缩放比例   [m]
         border_size = 25            # 边界大小      [m]
@@ -74,19 +74,21 @@ class LeggedRobotCfg(BaseConfig):
         num_cols = 20 # number of terrain cols (types)
         # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete]
         # 比例
-        # 稍微不平的地
+        # 第1位是斜坡
         # 第2位是不平的地板
-        # 第3位是大楼梯
-        # 第4位是大楼梯
-        # 第5位是踩踏石（就是不平的地形）
-        # 第6位是间隙
-        # 第7位是长台阶
-        # 第8位是斜坡1
-        # 第9位是更不平的地面
-        # 第10位是碎木
-        # 第11是墙
+        # 第3位是楼梯(上)
+        # 第4位是楼梯(下)
+        # 第5位是离散障碍物
+        # 第6位是踩踏石
+        # 第7位是长台阶(t_shaped_stairs)
+        # 第8位是斜坡1(ramp_platform_full_width)
+        # 第9位是更不平的地面(gravel_chipwood_pit)
+        # 第10位是碎木(dense_rubble_pit)
+        # 第11位是墙(high_wall)
+        # 第12位是减速带(speed_bump)
         # terrain_proportions = [0.1, 0.1, 0.0, 0.0, 0.1, 0.0, 0.30, 0.10,0.0,0.0,0.3]
-        terrain_proportions = [0.1, 0.15, 0.0, 0.0, 0.2, 0.0, 0.4, 0.15, 0.0, 0.0,0.0]
+        # terrain_proportions = [0.1, 0.15, 0.0, 0.0, 0.2, 0.0, 0.3, 0.15, 0.0, 0.0,0.0, 0.1]
+        terrain_proportions = [0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,0.0, 0.7]
         # terrain_proportions = [0.1, 0.2, 0.3, 0.3, 0.1]
         # trimesh only:
         slope_treshold = 0.75 # slopes above this threshold will be corrected to vertical surfaces
