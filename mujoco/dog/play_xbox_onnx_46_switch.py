@@ -203,7 +203,7 @@ def build_single_obs(quat_xyzw, omega, joint_q_isaac, joint_dq_isaac,
     obs[idx:idx+3] = cmd * cmd_scale[:3]
     idx += 3
 
-    omega_body = quat_rotate_inverse(quat_xyzw, omega)
+    omega_body = omega  # MuJoCo free-joint angular qvel is already in the local body frame
     obs[idx:idx+3] = omega_body.astype(np.float32) * ang_vel_scale
     idx += 3
 
