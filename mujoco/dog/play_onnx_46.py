@@ -10,6 +10,7 @@ Dog Sim2Sim — IsaacGym → MuJoCo
    sudo chmod 666 /dev/input/event*
 """
 import time
+import re
 import mujoco
 import mujoco.viewer
 import numpy as np
@@ -51,6 +52,33 @@ DEFAULT_ANGLES_MUJOCO = DEFAULT_ANGLES_ISAAC[ISAAC_TO_MUJOCO]
 TAU_LIMIT_HIP_THIGH = 23.7   # hip, thigh 关节力矩限制 [Nm]
 TAU_LIMIT_CALF = 35.55        # calf 关节力矩限制 [Nm]
 OUTPUT_PRINT_SCALE = 0.25
+
+
+def get_platform_heights(model):
+    """从高台 box 几何体读取顶面高度，返回 [(geom_id, name, height_m), ...]。"""
+    platforms = []
+    for geom_id in range(model.ngeom):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, geom_id)
+        if not name or not name.startswith("platform_"):
+            continue
+
+        # 静态 box 的顶面高度 = 中心 z + z 半尺寸。
+        height_m = float(model.geom_pos[geom_id, 2] + model.geom_size[geom_id, 2])
+        platforms.append((geom_id, name, height_m))
+    return platforms
+
+
+def validate_platform_height_labels(platforms):
+    """检查 XML 名称中的 cm 标注是否与几何体实际高度一致。"""
+    for _, name, height_m in platforms:
+        match = re.search(r"_(\d+)cm$", name)
+        if match is None:
+            print(f"[PLATFORM] ⚠ {name} 名称中没有高度标注")
+            continue
+        label_cm = int(match.group(1))
+        actual_cm = int(round(height_m * 100.0))
+        if label_cm != actual_cm:
+            print(f"[PLATFORM] ⚠ {name}: 名称={label_cm}cm, 实际={actual_cm}cm")
 
 
 def quat_rotate_inverse(q, v):
@@ -227,7 +255,9 @@ def build_single_obs(quat_xyzw, omega, joint_q_isaac, joint_dq_isaac,
     obs = np.zeros(46, dtype=np.float32)
     obs[0:3] = cmd * cmd_scale[:3]
 
-    omega_body = quat_rotate_inverse(quat_xyzw, omega)
+    # MuJoCo free-joint qvel[3:6] is already expressed in the local body frame.
+    # Rotating it again would corrupt the angular-velocity observation after yaw turns.
+    omega_body = omega
     obs[3:6] = omega_body.astype(np.float32) * ang_vel_scale
 
     gravity_world = np.array([0., 0., -1.], dtype=np.float64)
@@ -260,8 +290,8 @@ if __name__ == "__main__":
 
     base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym"
     config_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/mujoco/dog/config/dog.yaml"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/3400_2/model_3400.onnx"
-    xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/xml/dog_terrain.xml"
+    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_high/logs/dog_high_rough/model_2600.onnx"
+    xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_high/resources/robots/dog/xml/dog_terrain.xml"
 
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -305,6 +335,12 @@ if __name__ == "__main__":
     mj_model = mujoco.MjModel.from_xml_path(xml_path)
     mj_model.opt.timestep = simulation_dt
     mj_data = mujoco.MjData(mj_model)
+    platforms = get_platform_heights(mj_model)
+    validate_platform_height_labels(platforms)
+
+    print("\n[PLATFORM] 高台顶面高度:")
+    for _, name, height_m in platforms:
+        print(f"  {name}: {height_m * 100.0:.0f} cm")
 
     print(f"\n[验证] MuJoCo joint 顺序:")
     for i in range(mj_model.njnt):
@@ -356,6 +392,10 @@ if __name__ == "__main__":
     print(f"  [按住移动，松手即停] evdev 全局监听, Wayland/X11 通用\n")
 
     with mujoco.viewer.launch_passive(mj_model, mj_data, key_callback=key_callback) as viewer:
+        # XML 中的平台名包含实际高度（例如 platform_01_10cm）。
+        # 默认显示 geom 标签，使每个高台上方直接显示其对应高度。
+        viewer.opt.label = mujoco.mjtLabel.mjLABEL_GEOM
+
         # 设置第三人称跟踪相机
         trunk_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "trunk")
         if trunk_id >= 0:
