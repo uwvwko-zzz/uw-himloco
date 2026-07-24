@@ -272,6 +272,9 @@ class LeggedRobot(BaseTask):
             self.recovery_total_count += len(env_ids)
             # 成功率驱动课程：必须在 ever_success_buf 清零之前调用（读取本 episode 成败标志）
             self._update_recovery_curriculum(env_ids)
+            # 分桶课程权重更新：同样必须在 ever_success_buf 清零之前
+            if getattr(self.cfg.rewards, 'bucket_curriculum', False):
+                self._update_bucket_weights(env_ids)
         """ Reset some environments.
             Calls self._reset_dofs(env_ids), self._reset_root_states(env_ids), and self._resample_commands(env_ids)
             [Optional] calls self._update_terrain_curriculum(env_ids), self.update_command_curriculum(env_ids) and
@@ -352,17 +355,34 @@ class LeggedRobot(BaseTask):
                 rate = sum(self.recent_success_flags) / len(self.recent_success_flags)
                 self.extras["episode"]["recovery_success_rate"] = float(rate)
         self.extras["episode"]["recent_max_agitation_mean"] = float(torch.mean(self.recent_max_agitation).item())
-        # 低频控制台打印：每 500 全局步一次，便于实时看阈值是否合理
+        # 分桶课程诊断：各桶成功率 + 采样权重（验证"弱项多采样"是否生效）
+        if getattr(self.cfg.rewards, 'bucket_curriculum', False) and hasattr(self, 'bucket_success_flags'):
+            for b in range(self.num_buckets):
+                q = self.bucket_success_flags[b]
+                if len(q) > 0:
+                    self.extras["episode"][f"bucket{b}_success_rate"] = float(sum(q) / len(q))
+                self.extras["episode"][f"bucket{b}_weight"] = float(self.bucket_weights[b].item())
+        # 低频控制台打印：每 500 全局步一次，便于实时看阈值/桶分布是否合理
         if self.common_step_counter % 500 == 0:
             agit = self.recent_max_agitation
-            gz = self.projected_gravity[:, 2]
+            # 桶成功率/权重摘要（如启用分桶）
+            bucket_str = ""
+            if getattr(self.cfg.rewards, 'bucket_curriculum', False) and hasattr(self, 'bucket_success_flags'):
+                parts = []
+                for b in range(self.num_buckets):
+                    q = self.bucket_success_flags[b]
+                    r = sum(q)/len(q) if len(q) > 0 else 0.0
+                    w = float(self.bucket_weights[b].item())
+                    parts.append(f"b{b}(r={r:.2f},w={w:.2f})")
+                bucket_str = " buckets=[" + ",".join(parts) + "]"
             print(f"[RECOVERY DIAG] step={self.common_step_counter} "
                   f"fall_angle={getattr(self, 'fall_angle_current', 0):.2f} "
                   f"rate={sum(getattr(self, 'recent_success_flags', [0]))/max(1,len(getattr(self,'recent_success_flags',[1]))):.2f} "
                   f"agit(p50/p95/max)={torch.quantile(agit,0.5).item():.1f}/"
                   f"{torch.quantile(agit,0.95).item():.1f}/{agit.max().item():.1f} "
                   f"lin_vel_z_rms={torch.sqrt(torch.mean(self.base_lin_vel[:,2]**2)).item():.2f} "
-                  f"ang_xy_rms={torch.sqrt(torch.mean(torch.sum(self.base_ang_vel[:,:2]**2,dim=1))).item():.2f}")
+                  f"ang_xy_rms={torch.sqrt(torch.mean(torch.sum(self.base_ang_vel[:,:2]**2,dim=1))).item():.2f}"
+                  f"{bucket_str}")
         # send timeout info to the algorithm
         # 超时信息日志
         if self.cfg.env.send_timeouts:
@@ -792,40 +812,67 @@ class LeggedRobot(BaseTask):
 
 
     def _reset_root_states(self, env_ids):
-        """ 随机倒地初始化（带难度课程）。
+        """ 随机倒地初始化（分桶均衡 + 成功率自适应过采样）。
 
-        roll/pitch 的随机范围由难度课程决定（成功率驱动，回退到时间线性兜底）；
-        yaw 用小范围（恢复任务不关心朝向）；
-        z 随倒地姿态取合理贴地高度，避免穿地。
+        把总倾斜角 θ∈[0,π] 分成若干桶（默认 4 桶：小倾/中倾/大倾/翻倒）。
+        每个环境 reset 时先按桶权重抽一个桶，再在该桶的 θ 区间内随机采 θ 和方位角 φ，
+        分解成 roll/pitch（roll≈θ·cos(φ), pitch≈θ·sin(φ)，小角近似，恢复初始化够用）。
+        桶权重按各桶滑动成功率自适应：成功率高的桶降权、低的桶升权（弱项多练）。
+
+        设计动机：倒地角度→难度【不单调】（小倾角反而最难，易陷"前倾抽搐"局部最优；
+        完全翻倒最好学）。原"单一 cur_angle 单调上升"课程后期会让好学的大角度主导采样，
+        小倾角样本占比仅 ~6.5%，训练不足。分桶 + 自适应过采样把训练预算压到弱项姿态上。
         """
         num = len(env_ids)
-        # ===== 倒地难度课程 =====
-        # 当前全局难度 cur_angle（所有环境共享一个角度上限）由两种方式驱动：
-        #   1) 成功率驱动（默认）：用滚动窗口成功率，>up 升一档，<down 降一档。
-        #      避免原"纯时间线性"在策略还没学会时硬推到最高难度导致抽搐/取巧。
-        #   2) 时间线性兜底：当成功率课程关闭、或未收集到足够 episode 时，回退到按
-        #      common_step_counter 线性增长，保证难度无论如何都会推进（防卡死）。
-        angle_init = self.cfg.rewards.fall_angle_init
-        angle_final = self.cfg.rewards.fall_angle_final
-        if getattr(self.cfg.rewards, 'recovery_curriculum', False) and len(getattr(self, 'recent_success_flags', [])) >= self.cfg.rewards.success_rate_window:
-            cur_angle = self.fall_angle_current
+        enable_bucket = getattr(self.cfg.rewards, 'bucket_curriculum', False)
+        if enable_bucket:
+            # ===== 分桶采样 =====
+            # 1) 按桶权重抽桶（多项分布采样）
+            weights = self.bucket_weights  # 形状 [num_buckets]，和为 1
+            bucket_idx = torch.multinomial(weights, num_samples=num, replacement=True, out=None)
+            # 2) 每个环境在所属桶的 [θ_lo, θ_hi] 内均匀采 θ
+            #    用原生 torch.rand（避开 torch_rand_float 的 (int,int) 2 元组 shape 限制）。
+            bins = self.cfg.rewards.recovery_angle_bins  # list of [lo, hi] in rad
+            theta = torch.zeros(num, device=self.device)
+            for b, (lo, hi) in enumerate(bins):
+                mask = bucket_idx == b
+                n = int(mask.sum().item())
+                if n > 0:
+                    theta[mask] = lo + (hi - lo) * torch.rand(n, device=self.device)
+            # 3) 随机方位角 φ∈[0,2π)，分解成 roll/pitch（小角近似）
+            two_pi = 2.0 * 3.14159265
+            phi = two_pi * torch.rand(num, device=self.device)
+            roll = theta * torch.cos(phi)
+            pitch = theta * torch.sin(phi)
         else:
-            # 兜底：时间线性（早期没足够 episode 评估成功率时）
-            steps = self.cfg.rewards.fall_angle_curriculum_steps
-            t = min(1.0, self.common_step_counter / max(steps, 1))
-            cur_angle = angle_init + t * (angle_final - angle_init)
-            self.fall_angle_current = cur_angle   # 同步给成功率课程做基线
+            # ===== 回退：原单一角度范围采样（兜底）=====
+            angle_init = self.cfg.rewards.fall_angle_init
+            angle_final = self.cfg.rewards.fall_angle_final
+            if getattr(self.cfg.rewards, 'recovery_curriculum', False) and len(getattr(self, 'recent_success_flags', [])) >= self.cfg.rewards.success_rate_window:
+                cur_angle = self.fall_angle_current
+            else:
+                steps = self.cfg.rewards.fall_angle_curriculum_steps
+                t = min(1.0, self.common_step_counter / max(steps, 1))
+                cur_angle = angle_init + t * (angle_final - angle_init)
+                self.fall_angle_current = cur_angle
+            roll = torch_rand_float(-cur_angle, cur_angle, (num, 1), device=self.device).squeeze(1)
+            pitch = torch_rand_float(-cur_angle, cur_angle, (num, 1), device=self.device).squeeze(1)
+
+        # 记录本批环境的桶 ID（供 _update_bucket_weights 在 episode 结束时更新成功率）
+        # 关键：last_bucket_idx 必须是固定长度 [num_envs] 的张量，按 env_ids 散射写入，
+        # 绝不能整体替换（否则后续 reset 子集 env_ids 时长度不匹配导致越界）。
+        if enable_bucket:
+            self.last_bucket_idx[env_ids] = bucket_idx
+            # 已完成至少一次真实采样：下次 reset_idx 的 _update_bucket_weights 可以正常统计
+            self._bucket_curriculum_initialized = True
 
         self.root_states[env_ids, :3] = self.base_init_state[:3]
         self.root_states[env_ids, :3] += self.env_origins[env_ids]
         self.root_states[env_ids, :2] += torch_rand_float(-0.3, 0.3, (num, 2), device=self.device)
-        # z 随倒地程度取贴地高度：倒得越狠（cur_angle 越大）高度越低
+        # z 随倒地程度取贴地高度：倒得越狠（|θ| 越大）高度越低
         z_hi = 0.20
         z_lo = 0.10
         self.root_states[env_ids, 2] = torch_rand_float(z_lo, z_hi, (num, 1), device=self.device).squeeze(1)
-        # roll/pitch 在课程范围内随机（倒地姿态），yaw 小范围（恢复不关心朝向）
-        roll = torch_rand_float(-cur_angle, cur_angle, (num, 1), device=self.device).squeeze(1)
-        pitch = torch_rand_float(-cur_angle, cur_angle, (num, 1), device=self.device).squeeze(1)
         yaw = torch_rand_float(-0.5, 0.5, (num, 1), device=self.device).squeeze(1)
         quat = quat_from_euler_xyz(roll, pitch, yaw)
         self.root_states[env_ids, 3:7] = quat
@@ -835,6 +882,65 @@ class LeggedRobot(BaseTask):
         self.gym.set_actor_root_state_tensor_indexed(
             self.sim, gymtorch.unwrap_tensor(self.root_states),
             gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
+    def _init_bucket_curriculum(self):
+        """ 初始化分桶课程的状态：桶数、权重、各桶滑动成功率队列。 """
+        bins = self.cfg.rewards.recovery_angle_bins
+        self.num_buckets = len(bins)
+        self.bucket_weights = torch.ones(self.num_buckets, device=self.device) / self.num_buckets
+        # 各桶滑动成功率队列（存最近 N 个 episode 的成败标志）
+        self.bucket_success_flags = [[] for _ in range(self.num_buckets)]
+        # last_bucket_idx：记录"每个环境即将进入的桶"，由 _reset_root_states 产生，
+        # 在下次 reset_idx 时被 _update_bucket_weights 消费（配合 ever_success_buf 判断该 episode 成败）。
+        # 初始化为全 0：第一次 reset_idx 时还没有真正的 episode 结果（ever_success_buf 全 False），
+        # 此时不应更新桶统计——用 _bucket_curriculum_initialized 标志跳过。
+        self.last_bucket_idx = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self._bucket_curriculum_initialized = False
+
+    def _update_bucket_weights(self, env_ids):
+        """ episode 结束时更新桶成功率，并重算采样权重（弱项升权）。
+
+        权重 = softmax(1 / (rate + eps))：成功率高的桶权重小、低的桶权重大。
+        rate 用各桶最近 success_rate_window 个 episode 的成败标志计算。
+
+        时序：last_bucket_idx 由上一次 _reset_root_states 产生（这些 env 当时被分到的桶），
+        ever_success_buf 是刚刚结束的 episode 的成败——两者描述同一个 episode。
+        第一次 reset_idx 时还没有真正的 episode（ever_success_buf 全 False），跳过。
+        """
+        if not hasattr(self, 'bucket_success_flags'):
+            self._init_bucket_curriculum()
+        if len(env_ids) == 0:
+            return
+        # 第一次 reset（环境初始化）：还没有真实 episode 结果，跳过桶统计
+        if not getattr(self, '_bucket_curriculum_initialized', False):
+            return
+        # 把本批 episode 的 (桶ID, 是否成功) 压入对应桶的滑动队列
+        # 关键：last_bucket_idx 是全量 [num_envs] 张量，必须先用 env_ids 索引成子集，
+        # 和 succ（也是 [len(env_ids)] 子集）对齐，否则 mask 维度不匹配。
+        bucket_idx = self.last_bucket_idx[env_ids]
+        succ = self.ever_success_buf[env_ids]
+        for b in range(self.num_buckets):
+            mask = bucket_idx == b
+            if bool(mask.any()):
+                flags = succ[mask].cpu().tolist()
+                self.bucket_success_flags[b].extend(flags)
+        # 只保留最近 window 个
+        window = self.cfg.rewards.success_rate_window
+        for b in range(self.num_buckets):
+            if len(self.bucket_success_flags[b]) > window:
+                self.bucket_success_flags[b] = self.bucket_success_flags[b][-window:]
+        # 桶样本不足时不更新权重（避免早期误判）
+        if any(len(q) < min(window, 50) for q in self.bucket_success_flags):
+            return
+        # 重算权重：弱项（低成功率）升权
+        eps = 0.1  # 防止成功率 0/1 导致权重爆炸/归零
+        rates = []
+        for b in range(self.num_buckets):
+            q = self.bucket_success_flags[b]
+            rates.append(sum(q) / len(q) if len(q) > 0 else 0.5)
+        inv = torch.tensor([1.0 / (r + eps) for r in rates], device=self.device)
+        self.bucket_weights = inv / inv.sum()
+
 
     def _update_recovery_curriculum(self, env_ids):
         """ 成功率驱动的倒地难度课程。
@@ -1272,6 +1378,9 @@ class LeggedRobot(BaseTask):
         # "平稳到达"门槛用的近期扰动峰值缓冲：每步 = max(自身×decay, 当前 agitation)。
         # 用于 recovered 判定，排除翻滚/腾空作弊到达。agitation = ang_vel_xy² + lin_vel_z²。
         self.recent_max_agitation = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+        # 分桶倒地课程初始化（若启用）：桶权重 + 各桶滑动成功率队列
+        if getattr(self.cfg.rewards, 'bucket_curriculum', False):
+            self._init_bucket_curriculum()
 
     # 奖励函数准备函数
     def _prepare_reward_function(self):

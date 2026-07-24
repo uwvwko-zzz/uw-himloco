@@ -114,7 +114,7 @@ def build_single_obs(quat_xyzw, omega, joint_q_isaac, joint_dq_isaac,
     # [0:3]  速度命令 × scale（恢复任务恒为 0）
     obs[0:3] = cmd * cmd_scale[:3]
     # [3:6]  身体角速度 × scale
-    omega_body = quat_rotate_inverse(quat_xyzw, omega)
+    omega_body = omega  # MuJoCo free-joint angular qvel is already in the local body frame
     obs[3:6] = omega_body.astype(np.float32) * ang_vel_scale
     # [6:9]  重力投影
     gravity_world = np.array([0., 0., -1.], dtype=np.float64)
@@ -229,7 +229,7 @@ if __name__ == "__main__":
     # --- 路径 ---
     base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop"
     config_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/mujoco/dog_r/config/dog_r.yaml"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/logs/dog_recovery/model_4500.onnx"
+    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/logs/dog_recovery/model_2200_2.onnx"
     xml_path     = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/resources/robots/dog/xml/dog.xml"
 
     # --- 加载配置 ---

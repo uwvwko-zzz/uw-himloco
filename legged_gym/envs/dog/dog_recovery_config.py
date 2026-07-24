@@ -124,6 +124,16 @@ class DogRecoveryCfg(LeggedRobotCfg):
         smooth_success_enable = True         # 是否启用平稳门槛（诊断时可关）
         smooth_success_decay = 0.9           # 峰值衰减系数：每步旧峰值×0.9，约 10 步(0.2s)半衰
         smooth_success_threshold = 5.0       # 平稳阈值：agitation 峰值需低于此值才算平稳到达
+        # 分桶倒地课程（替代原单调上升课程）：倒地角度→难度【不单调】，
+        # 小倾角反而最难（易陷"前倾抽搐"局部最优），完全翻倒最好学。故不设"难度档上升"，
+        # 改为全程分桶采样 + 成功率自适应过采样：弱项姿态（低成功率桶）多采样。
+        recovery_angle_bins = [
+            [0.0, 0.698],      # 桶0：小倾角 0~40°（你重点关心的，最难，易抽搐）
+            [0.698, 1.571],    # 桶1：中倾 40~90°
+            [1.571, 2.443],    # 桶2：大倾 90~140°
+            [2.443, 3.14159],  # 桶3：翻倒 140~180°（最好学）
+        ]  # 桶边界（rad），总倾斜角 θ = acos(cos(roll)cos(pitch))
+        bucket_curriculum = True             # 是否启用分桶课程（关则回退到原单调上升课程）
 
         class scales(LeggedRobotCfg.rewards.scales):
             # ===== 倒地恢复 reward：4 正驱动 + 7 负约束（标准腿足 RL 结构）=====

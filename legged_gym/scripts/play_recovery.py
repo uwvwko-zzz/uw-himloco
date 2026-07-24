@@ -32,7 +32,7 @@
 
 用法：
     python legged_gym/scripts/play_recovery.py --task=dog_recovery
-    python play_recovery.py --task=dog_recovery --model /home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/logs/dog_recovery/model_2200.pt
+    python play_recovery.py --task=dog_recovery --model /home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_hop/logs/dog_recovery/model_2200_2.onnx
     python legged_gym/scripts/play_recovery.py --task=dog_recovery --headless  # 仅统计成功率
 """
 
