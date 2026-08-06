@@ -247,10 +247,19 @@ def build_body(parent_elem, link_name, link_elem, parent_joint,
             ie.set("mass", mass.attrib["value"])
         inertia = inertial.find("inertia")
         if inertia is not None:
-            ie.set("diaginertia",
-                   f"{inertia.attrib.get('ixx','0')} "
-                   f"{inertia.attrib.get('iyy','0')} "
-                   f"{inertia.attrib.get('izz','0')}")
+            ixx = inertia.attrib.get("ixx", "0")
+            iyy = inertia.attrib.get("iyy", "0")
+            izz = inertia.attrib.get("izz", "0")
+            ixy = inertia.attrib.get("ixy", "0")
+            ixz = inertia.attrib.get("ixz", "0")
+            iyz = inertia.attrib.get("iyz", "0")
+            if any(abs(float(v)) > 1e-12 for v in (ixy, ixz, iyz)):
+                ie.set(
+                    "fullinertia",
+                    f"{ixx} {iyy} {izz} {ixy} {ixz} {iyz}",
+                )
+            else:
+                ie.set("diaginertia", f"{ixx} {iyy} {izz}")
 
     # visual geom (mesh 优先, 否则用 primitive)
     for visual in link_elem.findall("visual"):
@@ -326,7 +335,7 @@ def build_mjcf(urdf_root, robot_name, links, joints, parent_of, children_of, bas
     # compiler
     ET.SubElement(mujoco_elem, "compiler", {
         "angle": "radian",
-        "meshdir": "../meshes/",
+        "meshdir": settings["meshdir"],
     })
 
     # size
@@ -473,14 +482,28 @@ def main():
                         help="base 初始高度 (m), 默认 0.45")
     parser.add_argument("--effort-mult", type=float, default=1.0,
                         help="ctrlrange = URDF effort × 此系数, 默认 1.0")
+    parser.add_argument(
+        "--meshdir",
+        default=None,
+        help="MJCF meshdir；默认根据 URDF 的相邻 meshes 目录自动计算",
+    )
     args = parser.parse_args()
 
+    out_dir = os.path.dirname(os.path.abspath(args.xml))
+    urdf_mesh_dir = os.path.abspath(
+        os.path.join(os.path.dirname(os.path.abspath(args.urdf)), "..", "meshes")
+    )
+    meshdir = args.meshdir or os.path.relpath(urdf_mesh_dir, out_dir)
+
     urdf_root, robot_name, links, joints, parent_of, children_of, base_link = parse_urdf(args.urdf)
-    settings = {"spawn_height": args.spawn, "effort_mult": args.effort_mult}
+    settings = {
+        "spawn_height": args.spawn,
+        "effort_mult": args.effort_mult,
+        "meshdir": meshdir,
+    }
     mjcf = build_mjcf(urdf_root, robot_name, links, joints, parent_of, children_of,
                       base_link, settings)
 
-    out_dir = os.path.dirname(os.path.abspath(args.xml))
     os.makedirs(out_dir, exist_ok=True)
     with open(args.xml, "w") as f:
         f.write(prettify(mjcf))

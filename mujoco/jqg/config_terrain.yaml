@@ -1,0 +1,45 @@
+model: ../../resources/robots/00000JQG/jqg.xml
+
+simulation:
+  timestep: 0.005
+  duration: 10.0
+  initial_height: 0.55
+  initial_position: [3.7, -9.0, 0.55]
+  # 与 dog_terrain.xml 的起跑朝向一致。
+  initial_quaternion: [-0.7071068, 0.0, 0.0, 0.7071068]
+
+control:
+  kp: 100.0
+  kd: 2.5
+  torque_limit: 150.0
+  velocity_limit: 15.71
+  decimation: 4
+  action_scale: 0.25
+
+observation:
+  history_length: 6
+  command_scale: [2.0, 2.0, 0.25]
+  angular_velocity_scale: 0.25
+  joint_position_scale: 1.0
+  joint_velocity_scale: 0.05
+  height_range: [0.35, 0.55]
+
+command:
+  linear_x: 0.0
+  linear_y: 0.0
+  yaw: 0.0
+  height: 0.45
+
+default_joint_angles:
+  FL_hip_joint: -0.0
+  FL_thigh_joint: -0.8
+  FL_calf_joint: 1.5
+  FR_hip_joint: 0.0
+  FR_thigh_joint: 0.8
+  FR_calf_joint: -1.5
+  RL_hip_joint: 0.0
+  RL_thigh_joint: -0.8
+  RL_calf_joint: 1.5
+  RR_hip_joint: -0.0
+  RR_thigh_joint: 0.8
+  RR_calf_joint: -1.5

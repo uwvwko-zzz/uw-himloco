@@ -1,14 +1,14 @@
 # pt_to_onnx.py
-import os
+import argparse
 import sys
+from pathlib import Path
 import numpy as np
 
 # 设置路径
-script_dir = os.path.dirname(os.path.abspath(__file__))
-himloco_gym_path = os.path.abspath(os.path.join(script_dir, '../../../..', 'himloco_gym'))
-sys.path.insert(0, himloco_gym_path)
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-import isaacgym
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,9 +20,9 @@ class HIMLocoONNXWrapper(nn.Module):
     将 HIMActorCritic 的推理流程封装为一个可导出 ONNX 的模块。
     
     推理流程 (act_inference):
-      1. obs_history (270D) -> estimator.encoder -> [vel(3D), latent(16D)]
+      1. obs_history (276D) -> estimator.encoder -> [vel(3D), latent(16D)]
       2. latent = F.normalize(latent, dim=-1, p=2)
-      3. actor_input = cat(obs_history[:, :45], vel, latent) -> 64D
+      3. actor_input = cat(obs_history[:, :46], vel, latent) -> 65D
       4. actor(actor_input) -> actions (12D)
     """
 
@@ -54,12 +54,24 @@ class HIMLocoONNXWrapper(nn.Module):
         return actions
 
 
-def export():
-    # 硬编码模型路径和参数（避免导入 task_registry）
-    MODEL_PATH = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/3400_2/model_3400.pt"
-    
+def export(model_path, output_path=None):
+    model_path = Path(model_path).expanduser().resolve()
+    if not model_path.is_file():
+        raise FileNotFoundError(f"找不到 PyTorch 模型: {model_path}")
+    if model_path.suffix.lower() != ".pt":
+        raise ValueError(f"--model 必须指向 .pt 文件: {model_path}")
+
+    if output_path is None:
+        output_path = model_path.with_suffix(".onnx")
+    else:
+        output_path = Path(output_path).expanduser().resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"📂 PyTorch 模型: {model_path}")
+    print(f"📤 ONNX 输出:   {output_path}")
+
     # 加载 checkpoint
-    ckpt = torch.load(MODEL_PATH, map_location="cpu")
+    ckpt = torch.load(str(model_path), map_location="cpu")
     
     # 直接创建 HIMActorCritic（使用已知参数）
     policy = HIMActorCritic(
@@ -107,13 +119,10 @@ def export():
         print("✅ Wrapper 输出与原始模型一致!")
 
     # ========== 6. 导出 ONNX ==========
-    output_path = '/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/3400_2/model_3400.onnx'
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
     torch.onnx.export(
         wrapper,
         dummy_obs,
-        output_path,
+        str(output_path),
         export_params=True,
         opset_version=12,
         input_names=["obs_history"],
@@ -131,7 +140,7 @@ def export():
     try:
         import onnxruntime as ort
 
-        sess = ort.InferenceSession(output_path)
+        sess = ort.InferenceSession(str(output_path))
         input_name = sess.get_inputs()[0].name
         output_name = sess.get_outputs()[0].name
 
@@ -168,5 +177,23 @@ def export():
     print(f"{'='*60}")
 
 
+def main():
+    parser = argparse.ArgumentParser(
+        description="将 46 维单步观测的 HIMLoco checkpoint 导出为 ONNX"
+    )
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="待转换的 .pt checkpoint 路径",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="可选 ONNX 输出路径；默认与模型同目录、同文件名",
+    )
+    args = parser.parse_args()
+    export(args.model, args.output)
+
+
 if __name__ == "__main__":
-    export()
+    main()

@@ -344,7 +344,17 @@ class LeggedRobot(BaseTask):
     #     # 特权观测：1步 × 238D
     #     self.privileged_obs_buf = torch.cat((current_obs[:, :self.num_one_step_privileged_obs], self.privileged_obs_buf[:, :-self.num_one_step_privileged_obs]), dim=-1)
 
-
+    def _get_height_command_obs(self):
+        """将当前机器人的高度命令范围线性归一化到 [-1, 1]。"""
+        height_min, height_max = self.command_ranges["range_height"]
+        height_half_range = 0.5 * (height_max - height_min)
+        if height_half_range <= 0:
+            raise ValueError(
+                "commands.ranges.range_height 必须满足 max > min，"
+                f"当前值为 [{height_min}, {height_max}]"
+            )
+        height_center = 0.5 * (height_min + height_max)
+        return (self.commands[:, 4] - height_center) / height_half_range
 
     def compute_observations(self):
         """ Computes observations
@@ -364,7 +374,7 @@ class LeggedRobot(BaseTask):
         
         # 第二步：添加高度指令到当前观测（46维）
         if self.cfg.commands.num_commands >= 5:
-            height_obs = (self.commands[:, 4] - 0.25) / 0.1      # 归一化高度命令
+            height_obs = self._get_height_command_obs()
             current_obs_one_step = torch.cat([current_obs, height_obs.unsqueeze(1)], dim=-1)
         else:
             current_obs_one_step = current_obs
@@ -421,7 +431,7 @@ class LeggedRobot(BaseTask):
         
         # 添加高度指令（+ 1 维 = 46维）
         if self.cfg.commands.num_commands >= 5:
-            height_obs = (self.commands[:, 4] - 0.25) / 0.1
+            height_obs = self._get_height_command_obs()
             current_obs_one_step = torch.cat([current_obs, height_obs.unsqueeze(1)], dim=-1)
         else:
             current_obs_one_step = current_obs
@@ -443,7 +453,7 @@ class LeggedRobot(BaseTask):
         
         # 第二步：添加高度指令（46维）
         if self.cfg.commands.num_commands >= 5:
-            height_obs = (self.commands[:, 4] - 0.25) / 0.1
+            height_obs = self._get_height_command_obs()
             current_obs_one_step = torch.cat([current_obs, height_obs.unsqueeze(1)], dim=-1)
         else:
             current_obs_one_step = current_obs

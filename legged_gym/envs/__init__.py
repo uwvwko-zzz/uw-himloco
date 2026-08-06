@@ -39,9 +39,14 @@ from legged_gym.envs.aliengo.aliengo_config import AlienGoRoughCfg, AlienGoRough
 from legged_gym.envs.dog.dog_config import DogRoughCfg, DogRoughCfgPPO
 from legged_gym.envs.dog_t.dog_t_config import DogTRoughCfg, DogTRoughCfgPPO
 
+from importlib import import_module
 import os
 
 from legged_gym.utils.task_registry import task_registry
+
+_jqg_config = import_module("legged_gym.envs.00000JQG.jqg_config")
+JQGRoughCfg = _jqg_config.JQGRoughCfg
+JQGRoughCfgPPO = _jqg_config.JQGRoughCfgPPO
 
 task_registry.register( "a1", LeggedRobot, A1RoughCfg(), A1RoughCfgPPO() )
 task_registry.register( "go1", LeggedRobot, Go1RoughCfg(), Go1RoughCfgPPO() )
@@ -49,3 +54,4 @@ task_registry.register( "go2", LeggedRobot, GO2RoughCfg(), GO2RoughCfgPPO() )
 task_registry.register( "aliengo", LeggedRobot, AlienGoRoughCfg(), AlienGoRoughCfgPPO() )
 task_registry.register( "dog", LeggedRobot, DogRoughCfg(), DogRoughCfgPPO() )
 task_registry.register( "dog_t", LeggedRobot, DogTRoughCfg(), DogTRoughCfgPPO() )
+task_registry.register( "jqg", LeggedRobot, JQGRoughCfg(), JQGRoughCfgPPO() )

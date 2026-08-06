@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 
@@ -17,6 +18,22 @@ from pynput import keyboard
 
 from legged_gym.envs import *
 from legged_gym.utils import get_args, task_registry
+
+
+def get_args_with_model():
+    """先取出自定义模型参数，其余参数继续交给 Isaac Gym 解析。"""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--model",
+        required=True,
+        help="要加载的 PyTorch 策略模型（.pt）",
+    )
+    model_args, remaining = parser.parse_known_args()
+    sys.argv = [sys.argv[0], *remaining]
+    args = get_args()
+    args.model = model_args.model
+    return args
+
 
 # ========== 全局键盘状态 ==========
 vx_cmd = 0.0
@@ -105,8 +122,9 @@ def play(args):
         train_cfg=train_cfg
     )
     
-    # === 手动指定完整路径加载（关键修复）===
-    policy_path = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/46_plane_1/model_2500.pt"
+    policy_path = os.path.abspath(os.path.expanduser(args.model))
+    if not os.path.isfile(policy_path):
+        raise FileNotFoundError(f"找不到策略模型: {policy_path}")
     print(f"[INFO] Loading policy from: {policy_path}")
     
     # 直接调用 runner.load() 传入完整路径
@@ -176,5 +194,5 @@ def play(args):
         print("\n[INFO] Simulation terminated cleanly.")
 
 if __name__ == '__main__':
-    args = get_args()
+    args = get_args_with_model()
     play(args)

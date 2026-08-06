@@ -258,10 +258,10 @@ if __name__ == "__main__":
     parser.add_argument("--no-policy", action="store_true")
     args = parser.parse_args()
 
-    base = "/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym"
-    config_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/mujoco/dog/config/dog.yaml"
-    policy_path = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/logs/dog_rough/3400_2/model_3400.onnx"
-    xml_path    = f"/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/xml/dog_terrain.xml"
+    base = "/home/uwvwko/桌面/HIMLoco-main/himloco_gym"
+    config_path = f"/home/uwvwko/桌面/HIMLoco-main/himloco_gym/mujoco/dog/config/dog.yaml"
+    policy_path = f"/home/uwvwko/桌面/HIMLoco-main/himloco_gym/logs/dog_rough/3400_2/model_3400.onnx"
+    xml_path    = f"/home/uwvwko/桌面/HIMLoco-main/himloco_gym/resources/robots/dog/xml/dog_terrain.xml"
 
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)

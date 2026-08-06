@@ -79,7 +79,7 @@ class DogRoughCfg( LeggedRobotCfg ):
 
 
     class asset( LeggedRobotCfg.asset ):
-        file = '/home/zhy/桌面/IsaacGym_Preview_4_Package/HIMLoco-main/himloco_gym/resources/robots/dog/urdf/dog_1.urdf'
+        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/dog/urdf/dog_1.urdf'
         name = "dog"             
         foot_name = "foot"            
 
