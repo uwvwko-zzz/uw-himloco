@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "state": {
+    "linear_x": 1.5,
+    "linear_y": 1.0,
+    "yaw": 1.0,
+    "height": 0.45,
+    "kp": 80.0,
+    "kd": 2.5,
+    "torque_limit": 175.38,
+    "motor_strength": 1.0,
+    "motor_delay_ms": 0.0,
+    "mass_scale": 1.0,
+    "payload_mass": 0.0,
+    "friction_scale": 1.0,
+    "gravity_z": -9.81,
+    "wheel_velocity_kp": 1.5
+  },
+  "map": "stairs",
+  "camera": "tracking"
+}
