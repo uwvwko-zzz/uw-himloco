@@ -155,7 +155,11 @@ def make_runtime_config(
     random_seed=None,
     snapshot_path=None,
     stop_on_panel_close=True,
+    open_browser=True,
     host="127.0.0.1",
+    telemetry=None,
+    telemetry_hz=20,
+    telemetry_max_points=300,
 ):
     """Build the complete config shape required by ``RuntimeControl``.
 
@@ -218,10 +222,13 @@ def make_runtime_config(
             "host": str(host),
             "port": int(port),
             "stop_on_panel_close": bool(stop_on_panel_close),
+            "open_browser": bool(open_browser),
             "default_map": next(iter(map_labels), None),
             "maps": map_labels,
             "default_camera": next(iter(camera_labels), None),
             "cameras": camera_labels,
+            "telemetry_hz": float(telemetry_hz),
+            "telemetry_max_points": int(telemetry_max_points),
             **render_cfg,
             **tracking_cfg,
         },
@@ -238,6 +245,8 @@ def make_runtime_config(
             push or {"force_range": [80.0, 180.0], "duration_range": [0.10, 0.25]}
         ),
     }
+    if telemetry is not None:
+        config["runtime_ui"]["telemetry"] = deepcopy(list(telemetry))
     if height_range is not None:
         config["observation"] = {"height_range": list(height_range)}
     return config

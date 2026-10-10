@@ -1,422 +1,197 @@
-# MuJoCo Runtime Control：快速移植与 AI 适配指南
+# MuJoCo Runtime Control 2.1
 
-`runtime_control` 是一套与策略、机器人型号和关节顺序解耦的 MuJoCo 运行期组件。轮足混合控制适配可参考 `mujoco/w1w/play_gui.py`。
+面向机器人 MuJoCo 仿真的浏览器控制、地形编辑和 sim-to-sim 辅助工具。
 
-它提供浏览器画面、键盘命令、地图切换、机载相机、实时 PD 参数、电机延迟、质量/摩擦/重力调整、随机推力、随机化、重置和急停。
+项目提供可视化地图编辑器、实时仿真面板、参数化障碍、URDF 转 MJCF、地图合并以及可复用的机器人适配接口。默认附带一个可独立运行的 Dog + ONNX 演示，不依赖 HIMLoco 工程。
 
-## 1. 文件与公共接口
+## 功能
 
-```text
-runtime_control/
-├── pyproject.toml / setup.cfg  # 可安装包元数据
-├── MANIFEST.in                 # wheel/sdist 资源声明
-├── src/runtime_control/
-│   ├── __init__.py             # 稳定的公共导入入口
-│   ├── session.py              # 组合场景的生命周期封装
-│   ├── adapter.py              # 机器人/策略接入契约
-│   ├── position_pd_adapter.py  # 纯位置 PD 机器人通用实现
-│   ├── resources.py            # 包内地形资源 API
-│   ├── integration.py          # 相机、viewer、配置工厂
-│   ├── runtime.py / panel.py   # 运行时与浏览器 UI
-│   ├── map_manager.py          # MJCF 合并、切图和出生点
-│   ├── control.py              # 电机延迟、PD 与力矩限制
-│   └── maps/                   # 随 wheel 发布的 terrain-only 资源
-└── eg/ / tests/                 # 可运行示例与回归测试
-```
+地图右侧可切换“障碍 / 出生点 / 路线”编辑模式。出生点支持点击、拖动以及高度和朝向输入；路线支持添加、拖动、修改高度、排序与删除。路线和出生点保存在 `scene.json`，Dog 预览会读取出生点。路线目前是参考路径，不自动控制机器人。
 
-推荐在目标 Python 环境中以可编辑方式安装：
+自定义障碍通过 `register_obstacle(kind, label, builder, defaults, parameters)` 注册。`builder(worldbody, obstacle, index)` 添加 MJCF 元素；参数描述格式为 `[中文名称, 单位, 最小值, 最大值, 步长]`。插件只从用户明确指定的可信 Python 模块加载，不从地图文件执行代码。加载含自定义障碍的地图时，需要启动时再次加载对应插件。
 
 ```bash
-python -m pip install -e mujoco/mujoco-gui
+PYTHONPATH="$PWD/eg${PYTHONPATH:+:$PYTHONPATH}" ./start_editor.sh --obstacle-plugin custom_obstacles
 ```
 
-新适配优先从包入口导入，不要引用内部文件：
+示例插件位于 `eg/custom_obstacles.py`，加载后左侧会增加“圆柱台”。
+
+- 插件式障碍注册；路线点添加、拖动、排序、删除；出生位置与朝向编辑（用于 Dog 预览）。
+
+
+- 在浏览器中创建、保存、载入、修改和删除地形；
+- 平地、斜坡、楼梯、噪声地形和 16 种参数化障碍；
+- MuJoCo 浏览器画面、鼠标旋转/平移/缩放和多档画质；
+- 实时调整速度命令、Kp/Kd、力矩、摩擦、重力、电机延迟和随机推力；
+- 实时曲线监控机身高度、线速度、角速度和最大控制量，支持暂停、清空和自定义指标；
+- 使用内置 Dog + ONNX 直接验证编辑后的地图；
+- URDF 转 MuJoCo MJCF，支持相对 mesh、ROS `package://` 和 DAE 自动转 OBJ；
+- 可复用的 `RobotAdapter`、`PositionPDAdapter` 和 `RuntimeScene` 接口。
+
+## 界面预览
+
+### 地图编辑器
+
+![MuJoCo 可视化地图编辑器](assert/createmap.png)
+
+### MuJoCo 验证与实时调参
+
+![Dog MuJoCo 验证与实时调参](assert/mujoco.png)
+
+### URDF 转 MJCF
+
+![URDF 转 MuJoCo MJCF](assert/urdf2xml.png)
+
+## 环境要求
+
+- Python 3.8+
+- Linux 推荐安装 `zenity`，用于图形化选择文件；
+- 原生 MuJoCo viewer 需要可用的 OpenGL/桌面环境。
+
+Python 依赖会自动安装：MuJoCo、NumPy、Pillow、ONNX Runtime 和 PyYAML。
+
+## 安装
+
+```bash
+git clone https://github.com/uwvwko-zzz/mujoco-gui.git
+cd mujoco-gui
+python -m pip install -e .
+```
+
+Linux 全局键盘监听是可选功能：
+
+```bash
+python -m pip install -e ".[keyboard]"
+```
+
+也可以安装构建好的 wheel：
+
+```bash
+python -m pip install mujoco_runtime_control-2.1.0-py3-none-any.whl
+```
+
+## 快速开始
+
+启动地图编辑器：
+
+```bash
+./start_editor.sh
+```
+
+或使用安装后的命令：
+
+```bash
+mujoco-scene-editor --output generated/visual_course
+```
+
+默认地址为 <http://127.0.0.1:8765/>。点击“用演示机器人在 MuJoCo 展示”会使用包内 Dog、ONNX 策略和当前地图启动浏览器仿真。
+
+启动 URDF 图形化转换器：
+
+```bash
+./start_urdf_converter.sh
+```
+
+或：
+
+```bash
+mujoco-urdf-converter-gui
+```
+
+默认地址为 <http://127.0.0.1:8770/>。
+
+## 命令行工具
+
+```bash
+# 地图编辑器
+mujoco-scene-editor --output generated/visual_course
+
+# URDF 转 MJCF，并用 MuJoCo 编译验证
+mujoco-urdf-to-mjcf robot.urdf robot.xml
+
+# 带 ROS package 和 mesh 目录
+mujoco-urdf-to-mjcf robot.urdf robot.xml \
+  --mesh-dir ./meshes \
+  --package-dir my_robot=/path/to/my_robot
+
+# 查看已有 MJCF
+mujoco-mjcf-viewer robot.xml
+```
+
+转换器支持 `fixed`、`revolute`、`continuous` 和 `prismatic` 关节。DAE 网格会自动转换到输出目录下的 `mujoco_meshes/*.obj`，生成的 XML 使用相对路径。
+
+## Python 接入
 
 ```python
 from runtime_control import (
-    ActionSpec, MapSpec, MotorCommandDelay, ParameterSpec,
-    RuntimeControl, RuntimeScene, RobotAdapter, PositionPDAdapter,
+    PositionPDAdapter,
+    RuntimeScene,
     bundled_map_specs,
-    compute_pd_torques, make_runtime_config,
-    make_standard_robot_cameras, scale_torque_limits,
-    setup_tracking_camera, standard_camera_options, viewer_context,
-)```
-
-目录本身可以叫 `mujoco-gui`，安装后稳定的 Python 包名仍是
-`runtime_control`。
-
-依赖方向是单向的：用户项目导入 `runtime_control`，包内不反向导入
-W1W、Dog、ONNX 或任何训练框架。观测构造、关节映射、策略推理和执行器
-始终留在用户项目中。
-
-## 2. 移植前必须查清的事实
-
-不要根据机器人名字猜以下内容，应从目标脚本、MJCF、训练配置和 ONNX 输入输出实际确认：
-
-1. 机器人 MJCF 路径和自由根机身名称；
-2. MuJoCo 的 `qpos/qvel/ctrl` 地址和关节顺序；
-3. 策略使用的关节顺序、默认角、观测布局和动作缩放；
-4. 仿真时间步、控制降采样、Kp/Kd 和每个电机的力矩上限；
-5. 根坐标重置高度、四元数顺序和每张地图的安全出生点；
-6. 目标脚本是“键盘控制类”还是全局按键集合；
-7. 实际运行环境是否有 `mujoco`、`Pillow`、`yaml` 和策略后端。
-
-MuJoCo 根四元数为 `wxyz`。策略可能使用 `xyzw`，二者不能混用。
-
-### 2.1 12 自由度纯位置 PD
-
-如果 action 全部是关节目标位置，直接配置 `PositionPDAdapter`：
-
-```python
-def build_obs(adapter, model, data, command, **context):
-    joint_pos = data.qpos[adapter.qpos_adr]
-    joint_vel = data.qvel[adapter.qvel_adr]
-    # 按训练时的布局、缩放和历史顺序构造，必须与策略一致。
-    return make_policy_observation(joint_pos, joint_vel, command)
-
-adapter = PositionPDAdapter(
-    root_body_name="trunk",
-    expected_dimensions=(19, 18, 12),
-    joint_names=JOINT_NAMES,
-    actuator_names=ACTUATOR_NAMES,
-    default_positions=DEFAULT_POS,
-    kp=KP,
-    kd=KD,
-    action_scale=0.25,
-    torque_limits=TORQUE_LIMITS,
-    observation_builder=build_obs,
+    make_runtime_config,
 )
 ```
 
-### 2.2 16 自由度混合控制
-
-如果同时包含位置和速度 action，继承 `RobotAdapter` 实现
-`bind/reset/build_observation/compute_control`。W1W 的 12 条腿位置 PD +
-4 轮速度控制完整实现在 `mujoco/w1w/w1w_adapter.py`。
-
-两种适配器都会验证根 body、`nq/nv/nu`、actuator ID、输出维度以及
-NaN/Inf，不再让关节顺序错误静默进入仿真。
-
-## 3. 最短移植流程
-
-### 3.1 安装并导入公共包
-
-开发时使用可编辑安装：
-
-```bash
-python -m pip install -e /path/to/mujoco-gui
-```
-
-部署到其他项目可直接安装构建出的 wheel，不需要复制源码目录。
-W1W 中的源码路径回退只用于本仓库上层调试，不是对外 API。
-
-### 3.2 声明地图
+使用内置地图：
 
 ```python
 from runtime_control import bundled_map_specs
 
-MAP_SPECS = bundled_map_specs(("race_track", "stairs"))
+maps = bundled_map_specs(("race_track", "stairs", "google_barkour"))
 ```
 
-地图 XML 自带另一个机器人时必须排除其根 body：
+生成地形：
 
 ```python
-from runtime_control import bundled_map_spec
+from runtime_control import ObstacleSpec, SceneSpec, TerrainSpec, scene_map_spec
 
-MAP_SPECS["course"] = bundled_map_spec(
-    "rc26_track", exclude_bodies=("old_robot_root",)
-)
-```
-
-地图最好是 terrain-only MJCF，只包含静态地形。相对 mesh、texture 和 hfield 路径会在合并时转成绝对路径。
-每张地图可通过 `minimum_box_half_thickness` 单独设置薄板最小半厚度，
-并用 `contact_params={"friction": "0.6 0.005 0.0001", "solref": "0.03 2"}`
-设置接触参数。`strict=True` 为默认值，导入 body 如果含有
-joint/freejoint 会立即报错，防止地图悄悄改变机器人自由度。
-
-### 3.3 生成真正的机载相机
-
-世界坐标 `track/trackcom` 相机通常和第三人称差别不大。公共工厂会生成三台真正挂在机器人根 body 下的 fixed 相机：
-
-```python
-ROBOT_CAMERAS = make_standard_robot_cameras(prefix="my_robot")
-CAMERA_OPTIONS = standard_camera_options(prefix="my_robot")
-```
-
-默认假设本体坐标为 `+X` 前、`+Y` 左、`+Z` 上，尺寸接近中型四足。尺寸不同时调整局部位置：
-
-```python
-ROBOT_CAMERAS = make_standard_robot_cameras(
-    prefix="my_robot",
-    front_position=(0.20, 0.0, 0.12),
-    rear_position=(-0.80, 0.0, 0.50),
-    top_position=(0.0, 0.0, 1.00),
-)
-```
-
-UI 键名必须和 MJCF camera 的 `name` 完全一致。两个函数使用相同 `prefix` 可避免错配。
-
-### 3.4 合并机器人和地图
-
-先按 3.5 构造 `runtime_config`，然后由会话对象统一管理临时目录、
-MJCF 合并、`MjModel/MjData`、运行时和关闭清理：
-
-```python
-scene = RuntimeScene.for_adapter(
-    adapter,
-    robot_xml=ROBOT_XML,
-    map_specs=MAP_SPECS,
-    runtime_config=runtime_config,
-    robot_cameras=ROBOT_CAMERAS,
-    dynamic_obstacle_map="dynamic_obstacles",
-)
-scene.open()
-model, data, runtime = scene.model, scene.data, scene.runtime
-```
-
-所有地图编译进一个模型，运行时通过 geom 分组切换，不会重新创建 `MjModel`。
-`for_adapter()` 会自动使用适配器的根 body/模型维度，打开时 bind，关闭时
-unbind。未启用地图会关闭碰撞并隐藏。
-
-### 3.5 构造运行时配置
-
-策略 YAML 可以保持原结构。单独构造运行期配置，避免为了 UI 改坏训练/推理参数：
-
-```python
-map_labels = {"flat": "平地", "stairs": "楼梯"}
-map_spawns = {
-    "flat": {"position": [0, 0, 0.45], "quaternion": [1, 0, 0, 0]},
-    "stairs": {"position": [0, 0, 0.45], "quaternion": [1, 0, 0, 0]},
-}
-
-runtime_config = make_runtime_config(
-    gui=args.gui,
-    title="My Robot MuJoCo 实时调参",
-    maps=map_labels,
-    map_spawns=map_spawns,
-    kp=40.0,
-    kd=1.0,
-    torque_limit=35.0,
-    initial_position=map_spawns["flat"]["position"],
-    command=(1.0, 1.0, 1.0, 0.30),  # vx, vy, yaw, height
-    height_range=(0.20, 0.40),
-    cameras=CAMERA_OPTIONS,
-    port=args.gui_port,
-    randomization={
-        "kp": [32.0, 48.0], "kd": [0.8, 1.2],
-        "torque_limit": [28.0, 42.0],
-        "motor_strength": [0.9, 1.1],
-        "motor_delay_ms": [0.0, 15.0],
-        "mass_scale": [0.9, 1.1], "payload_mass": [0.0, 2.0],
-        "friction_scale": [0.5, 1.5], "gravity_z": [-10.3, -9.3],
-    },
-    parameters=[
-        ParameterSpec(
-            "wheel_velocity_kp", "轮子速度 Kp", 0, 5, 0.05, 1.5
-        ),
+scene = SceneSpec(
+    name="rough_course",
+    terrain=TerrainSpec(kind="noise", seed=42, length=12, width=8),
+    obstacles=[
+        ObstacleSpec("stairs", x=2.0, params={"count": 6, "rise": 0.12}),
+        ObstacleSpec("narrow_bridge", x=5.0, params={"length": 3.0}),
     ],
-    actions=[
-        ActionSpec("fall_side", "侧翻测试", shortcut="n", style="warn"),
-    ],
-    random_seed=1,
-    snapshot_path="runtime_preset.json",
 )
-delay = MotorCommandDelay(model.opt.timestep)
+terrain = scene_map_spec(scene, "generated/rough_course")
 ```
 
-`make_runtime_config` 会检查每个 UI 地图是否都有出生点，提前暴露键名遗漏。
+机器人策略中的观测构造、关节顺序、动作缩放和控制频率由机器人项目负责；`runtime_control` 负责场景、界面、地图切换、相机和运行时参数，因此不会反向依赖具体训练框架。
 
-### 3.6 浏览器和原生 viewer 必须互斥
-
-不要在 `--gui` 时仍无条件调用 `mujoco.viewer.launch_passive()`，否则同一仿真会渲染两次，帧率明显下降。
-
-```python
-display = scene.viewer(args.gui, key_callback=key_callback)
-with display as viewer:
-    if not args.gui:
-        setup_tracking_camera(
-            viewer, model, "base_link",
-            distance=1.7, azimuth=135, elevation=-20,
-        )
-
-    while viewer.is_running():
-        # simulation loop
-        if not args.gui:
-            viewer.sync()
-```
-
-`--gui` 时仅提供无窗口循环上下文，浏览器渲染由 `RuntimeControl` 管理；不加 `--gui` 时才创建原生 viewer。
-关闭浏览器面板会通知 `viewer.is_running()` 退出，并回收 HTTP
-端口与渲染线程。
-
-### 3.7 每步接入运行时钩子
-
-全局物理按键集合版本：
-
-```python
-if runtime.update_command(physical_pressed_keys):
-    cmd = np.array([
-        runtime_config["command"]["linear_x"],
-        runtime_config["command"]["linear_y"],
-        runtime_config["command"]["yaw"],
-    ], dtype=np.float32)
-else:
-    cmd = original_get_commands()
-
-state = runtime.runtime_control(model, data)
-if runtime.consume_reset():
-    reset_robot_from_runtime_config()
-    delay.reset()
-    runtime.reset_simulation_state()
-
-runtime.apply_external_forces(model, data)
-```
-
-已有键盘类时可用 `RuntimeKeyboardMixin`。不要为了 Mixin 强行把简单的全局按键脚本重构成类。
-
-### 3.8 在写入 `data.ctrl` 前应用电机参数
-
-```python
-applied_targets = delay.apply(targets, state["motor_delay_ms"])
-data.ctrl[:] = compute_pd_torques(
-    applied_targets, joint_positions, joint_velocities,
-    state["kp"], state["kd"],
-    motor_strength=state["motor_strength"],
-    torque_limit=state["torque_limit"],
-)
-```
-
-Kp、Kd、强度和限制可以是标量或逐关节数组。
-
-若 hip/thigh/calf 的标称限制不同，而 UI 只有一个滑块，应保持原比例：
-
-```python
-effective_limits = scale_torque_limits(
-    nominal_limits, state["torque_limit"], reference_limit=35.55,
-)
-```
-
-再把 `effective_limits` 传给 `compute_pd_torques`。不要用一个标量覆盖全部关节限制。
-
-## 4. 重置的完整语义
-
-地图切换会更新：
-
-```python
-runtime_config["simulation"]["initial_position"]
-runtime_config["simulation"]["initial_quaternion"]
-```
-
-reset 必须读取它们，不能继续硬编码位置。完整重置还应：
-
-- `mj_resetData()` 后恢复根位置、根四元数和默认关节角；
-- 清空策略历史观测和 last action；
-- `delay.reset()`，防止执行重置前的旧目标；
-- `runtime.reset_simulation_state()`，清除残余外力；
-- `mj_forward()`。
-
-## 5. 键盘与视角
-
-浏览器面板已经处理窗口失焦、页面隐藏、地图/视角下拉框、急停和关闭页面造成的卡键。前端发送释放事件，后端在地图/相机切换时也清空按键兜底。适配脚本不应另外缓存浏览器按键。
-
-物理功能键修改高度或急停时同步面板：
-
-```python
-runtime_config["command"]["height"] = new_height
-runtime.sync_height_to_panel()
-runtime.sync_stop_to_panel()
-```
-
-## 6. 性能原则
-
-- 浏览器 `fps` 是画面目标，不是物理仿真频率；
-- 插件会按 `width/height` 自动扩大 MuJoCo offscreen framebuffer；
-- `width/height` 增大会提高 OpenGL、回读和 JPEG 编码成本；
-- 优先用 CSS 放大，仅在明显模糊时提高渲染分辨率；
-- `--gui` 时不要再启动原生 viewer；
-- 多地图模型包含更多 geom 元数据，这是即时切图的代价；
-- Perlin 地形优先使用 hfield，不要用数千个小 box；
-- `runtime_control()` 每个物理步调用，策略推理仍按原 decimation 执行。
-
-## 7. 常见失败
-
-### `ModuleNotFoundError: runtime_control`
-
-按 3.1 在当前 Python/conda 环境安装本包，并用
-`python -m pip show mujoco-runtime-control` 确认环境一致。
-
-### 找不到根 body
-
-`compose_scene(robot_body_name=...)` 和 `RuntimeControl(base_body_name=...)` 必须使用同一个真实名称。
-
-### 切图后机器人消失或摔落
-
-检查该地图的出生高度和 `wxyz` 四元数，不要只调整全局初始位置。
-
-### 视角少或“固定相机”无效果
-
-世界坐标 `trackcom` 不等于机载相机。使用 `make_standard_robot_cameras()` 注入根 body，并把 `standard_camera_options()` 传给配置。
-
-### 电机延迟无效果
-
-确认 `delay.apply()` 位于每个物理步，不是只位于策略推理步；重置时调用 `delay.reset()`。
-
-### 调力矩后动作被破坏
-
-不同电机限制使用 `scale_torque_limits()` 保持比例，并核对策略/MuJoCo 关节映射方向。
-
-### 端口占用
-
-暴露 `--gui-port` 并传给 `make_runtime_config(port=args.gui_port)`。
-
-## 8. 验收清单
-
-- [ ] `model.nq/nv/nu` 与原机器人一致；
-- [ ] 根 body 存在，标准相机 `cam_bodyid` 等于根 body id；
-- [ ] 每张地图至少有一个 `map_<name>_...` geom；
-- [ ] 每张地图能切换并在安全出生点重置；
-- [ ] 不加 `--gui` 只开原生 viewer；
-- [ ] 加 `--gui` 只开浏览器；
-- [ ] 按住移动键切视角后不会卡键；
-- [ ] 策略输入、动作和关节映射未改变；
-- [ ] 标称设置下新旧 PD 输出一致；
-- [ ] Kp/Kd、强度、延迟和力矩确实影响 `data.ctrl`；
-- [ ] reset 清空观测历史、延迟队列和外力；
-- [ ] 退出调用 `scene.close()`，或使用 `with RuntimeScene(...)`。
-- [ ] 关闭后同一进程可以在原端口再次启动面板。
-
-先执行静态检查，再用实际环境编译组合 MJCF：
-
-```bash
-python -m py_compile mujoco/mujoco-gui/src/runtime_control/*.py mujoco/<robot>/play.py
-python -m unittest discover -s mujoco/mujoco-gui/tests -v
-```
-
-## 9. 可直接交给 AI 的任务模板
+## 项目结构
 
 ```text
-请把 mujoco/runtime_control 接入 <目标入口脚本>。
-
-要求：
-1. 先读 runtime_control/README_zh.md、目标入口、策略配置和机器人 MJCF；
-2. 实际确认根 body、qpos/qvel/ctrl 地址、两侧关节顺序和力矩限制，不要猜；
-3. 保留现有观测、动作缩放、默认角和关节映射；
-4. 使用 MapSpec + compose_scene，不复制 runtime_control；
-5. 使用 make_standard_robot_cameras + standard_camera_options；
-6. 使用 make_runtime_config 构造独立运行时配置；
-7. 使用 viewer_context，保证 --gui 只开浏览器，非 --gui 只开原生 viewer；
-8. 每个物理步接入 RuntimeControl、MotorCommandDelay、外力和真实 PD 参数；
-9. 分关节力矩不同时用 scale_torque_limits 保持比例；
-10. reset 读取当前出生点并清空观测历史、延迟队列和外力；
-11. 不覆盖目标脚本中与任务无关的已有修改；
-12. 最后执行 py_compile、组合 MJCF 编译、根 body/相机归属、地图分组和
-    新旧 PD 数值回归验证，并报告启动命令。
+src/runtime_control/
+├── adapter.py              # 通用机器人接口
+├── position_pd_adapter.py  # 位置 PD 适配器
+├── runtime.py              # 运行时控制
+├── session.py              # MuJoCo 场景生命周期
+├── scene_builder.py        # 地形与障碍生成
+├── scene_editor.py         # 浏览器地图编辑器
+├── urdf_converter.py       # URDF/DAE 转换
+├── urdf_gui.py             # URDF 图形界面
+├── maps/                   # 随 wheel 安装的地图
+└── demo/                   # 随 wheel 安装的 Dog 演示
 ```
 
-## 10. 跨项目发布
+## 开发与测试
 
-不再复制包内 Python/XML/纹理文件。在包目录执行
-`python -m pip wheel . --no-build-isolation --no-deps -w dist`，
-然后在用户项目安装 `dist/mujoco_runtime_control-*.whl`。地形 XML、纹理和
-mesh 会随 wheel 安装，并由 `bundled_map_specs()` 定位。用户项目只保留
-机器人 MJCF、策略适配代码、出生点和它自己的地形。
+```bash
+python -m pip install -e ".[test,keyboard]"
+python -m unittest discover -s tests -v
+```
+
+构建 wheel：
+
+```bash
+python -m pip wheel . --no-deps -w dist
+```
+
+生成文件默认保存在项目自己的 `generated/`，该目录不会提交到 Git。
+
+## 致谢
+
+本项目的早期设计参考了 [ArenaX](https://github.com/Lain-Ego0/ArenaX) 的 MuJoCo 地形编辑与机器人策略验证流程。感谢 ArenaX 项目提供的思路与开源实践，感谢lain。
+
+## 第三方资源
+
+Google Barkour 地图资源的原始 Apache-2.0 许可保存在 `src/runtime_control/maps/BARKOUR_LICENSE.txt`。

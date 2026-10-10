@@ -111,10 +111,18 @@ def parse_args():
     parser.add_argument("--onnx", required=True, type=Path)
     parser.add_argument("--xml", type=Path, default=ROBOT_XML)
     parser.add_argument(
-        "--map", choices=tuple(MAP_SPECS), default="flat",
-        help="Initial map; the browser can switch maps at runtime",
+        "--map", default="flat",
+        help="Initial map; use 'custom' together with --custom-map",
+    )
+    parser.add_argument(
+        "--custom-map", type=Path,
+        help="Terrain-only MJCF exported by the visual scene editor",
     )
     parser.add_argument("--gui", action="store_true", help="Open browser GUI only")
+    parser.add_argument(
+        "--no-open-browser", action="store_true",
+        help="Start the browser GUI server without opening another window",
+    )
     parser.add_argument("--headless", action="store_true", help="Run without a viewer")
     parser.add_argument("--gui-port", type=int, default=8765)
     parser.add_argument("--seed", type=int, default=1)
@@ -140,20 +148,32 @@ def parse_args():
     args.onnx = args.onnx.expanduser().resolve()
     args.xml = args.xml.expanduser().resolve()
     args.preset = args.preset.expanduser().resolve()
+    if args.custom_map is not None:
+        args.custom_map = args.custom_map.expanduser().resolve()
     if not args.onnx.is_file():
         parser.error(f"ONNX policy not found: {args.onnx}")
     if not args.xml.is_file():
         parser.error(f"robot XML not found: {args.xml}")
+    available_maps = set(MAP_SPECS)
+    if args.custom_map is not None:
+        if not args.custom_map.is_file():
+            parser.error(f"custom map not found: {args.custom_map}")
+        available_maps.add("custom")
+    if args.map not in available_maps:
+        parser.error("unknown map %r; choose from %s" % (
+            args.map, ", ".join(sorted(available_maps))
+        ))
     return args
 
 
-def map_spawns():
+def map_spawns(map_names=None):
+    map_names = tuple(map_names or MAP_SPECS)
     spawns = {
         name: {
             "position": [0.0, 0.0, 0.52],
             "quaternion": [1.0, 0.0, 0.0, 0.0],
         }
-        for name in MAP_SPECS
+        for name in map_names
     }
     spawns["flat"]["position"] = [0.0, 0.0, 0.48]
     spawns["rc26_track"] = {
@@ -161,15 +181,18 @@ def map_spawns():
         "quaternion": [-0.7071068, 0.0, 0.0, 0.7071068],
     }
     spawns["google_barkour"]["position"] = [1.0, -1.5, 0.52]
+    if "custom" in spawns:
+        spawns["custom"]["position"] = [0.0, 0.0, 0.48]
     return spawns
 
 
-def build_runtime_config(args):
-    spawns = map_spawns()
+def build_runtime_config(args, map_labels=None, spawns=None):
+    map_labels = dict(map_labels or MAP_LABELS)
+    spawns = dict(spawns or map_spawns(map_labels))
     config = make_runtime_config(
         gui=args.gui,
         title="W1W MuJoCo 实时调参与 Sim2Sim 验证",
-        maps=MAP_LABELS,
+        maps=map_labels,
         map_spawns=spawns,
         kp=KP_REFERENCE,
         kd=KD_REFERENCE,
@@ -213,6 +236,7 @@ def build_runtime_config(args):
         random_seed=args.seed,
         snapshot_path=args.preset,
         stop_on_panel_close=True,
+        open_browser=not args.no_open_browser,
     )
     config["runtime_ui"]["default_map"] = args.map
     return config
@@ -407,7 +431,12 @@ def run():
     np.random.seed(args.seed)
     map_specs = dict(MAP_SPECS)
     map_specs["flat"] = MapSpec(args.xml, exclude_bodies=("base",))
-    runtime_config = build_runtime_config(args)
+    map_labels = dict(MAP_LABELS)
+    if args.custom_map is not None:
+        map_specs["custom"] = MapSpec(args.custom_map)
+        map_labels["custom"] = "可视化编辑器场景"
+    spawns = map_spawns(map_specs)
+    runtime_config = build_runtime_config(args, map_labels, spawns)
     policy, input_name, output_name = load_policy(str(args.onnx))
     adapter = W1W16Adapter(
         kp_reference=KP_REFERENCE,

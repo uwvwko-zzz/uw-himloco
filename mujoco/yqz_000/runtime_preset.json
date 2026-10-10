@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "state": {
+    "linear_x": 1.0, "linear_y": 0.0, "yaw": 1.0, "height": 0.47,
+    "kp": 80.0, "kd": 2.0, "torque_limit": 120.0,
+    "motor_strength": 1.0, "motor_delay_ms": 0.0,
+    "mass_scale": 1.0, "payload_mass": 0.0,
+    "friction_scale": 1.0, "gravity_z": -9.81,
+    "wheel_velocity_kp": 0.5
+  },
+  "map": "flat",
+  "camera": "tracking"
+}

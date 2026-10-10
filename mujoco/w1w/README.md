@@ -30,6 +30,12 @@ Keyboard controls match `mujoco/jqg/play_onnx.py`:
 
 ## Browser GUI / runtime-control plugin
 
+To start the visual map editor with the W1W XML and policy integration, use:
+
+```bash
+./mujoco/w1w/start_editor.sh
+```
+
 The `mujoco/mujoco-gui` plugin is integrated through a separate W1W entry
 point, so the original players remain unchanged. Start the browser-only GUI
 with:

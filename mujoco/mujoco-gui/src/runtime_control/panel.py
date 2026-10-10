@@ -78,6 +78,43 @@ class ActionSpec:
         }
 
 
+@dataclass(frozen=True)
+class TelemetrySpec:
+    """Description of one real-time curve shown in the browser panel."""
+
+    key: str
+    label: str
+    unit: str = ""
+    color: str = "#42dfd2"
+
+    def __post_init__(self):
+        if not self.key or not self.key.replace("_", "").isalnum():
+            raise ValueError("telemetry key must contain only letters, digits and '_'")
+        if not str(self.color).startswith("#") or len(str(self.color)) not in {4, 7}:
+            raise ValueError("telemetry color must be a CSS hex color")
+
+    def as_dict(self):
+        return {"key": self.key, "label": self.label, "unit": self.unit, "color": self.color}
+
+
+DEFAULT_TELEMETRY = (
+    TelemetrySpec("base_height", "机身高度", "m", "#42dfd2"),
+    TelemetrySpec("linear_speed", "线速度", "m/s", "#4da3ff"),
+    TelemetrySpec("angular_speed", "角速度", "rad/s", "#f7c65c"),
+    TelemetrySpec("control_abs_max", "最大控制量", "", "#ff7085"),
+)
+
+
+def normalize_telemetry(specs):
+    result = []
+    for item in DEFAULT_TELEMETRY if specs is None else specs:
+        spec = item if isinstance(item, TelemetrySpec) else TelemetrySpec(**dict(item))
+        if any(existing["key"] == spec.key for existing in result):
+            raise ValueError("duplicate telemetry key: %s" % spec.key)
+        result.append(spec.as_dict())
+    return result
+
+
 DEFAULT_SCHEMA = {
     "commands": [
         ["linear_x", "W/S 前后速度档位", 0, 2, 0.05],
@@ -156,12 +193,13 @@ def normalize_actions(actions):
 
 def build_panel_html(
     title, schema, fps, maps=None, cameras=None, actions=None,
-    snapshot_enabled=False, render_width=640, render_height=480,
+    snapshot_enabled=False, render_width=640, render_height=480, telemetry=None,
 ):
     schema_json = json.dumps(schema, ensure_ascii=False)
     maps_json = json.dumps(maps or {}, ensure_ascii=False)
     cameras_json = json.dumps(cameras or {}, ensure_ascii=False)
     actions_json = json.dumps(actions or {}, ensure_ascii=False)
+    telemetry_json = json.dumps(normalize_telemetry(telemetry), ensure_ascii=False)
     safe_title = html.escape(str(title))
     render_width = max(1, int(render_width))
     render_height = max(1, int(render_height))
@@ -189,19 +227,25 @@ def build_panel_html(
 *{{box-sizing:border-box}}body{{font:14px Inter,"Noto Sans SC",system-ui,sans-serif;background:radial-gradient(circle at 15% -10%,#16375b 0,transparent 35%),radial-gradient(circle at 95% 10%,#25204e 0,transparent 30%),var(--bg);color:var(--text);margin:0;min-height:100vh}}main{{max-width:1580px;margin:auto;padding:22px}}
 .topbar{{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}}.brand small{{display:block;color:var(--cyan);font-size:11px;font-weight:800;letter-spacing:.18em}}h1{{font-size:24px;margin:5px 0 0}}h2{{font-size:14px;margin:0 0 16px}}.live{{display:flex;align-items:center;gap:8px;background:#101c2dcc;border:1px solid var(--line);padding:8px 12px;border-radius:999px}}.dot{{width:8px;height:8px;border-radius:50%;background:#36e49b;box-shadow:0 0 12px #36e49b}}
 .layout{{display:grid;grid-template-columns:minmax(0,3fr) minmax(300px,1fr);gap:18px;align-items:start}}.stack,.parameter-grid{{display:grid;gap:18px}}.parameter-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}section{{background:linear-gradient(145deg,#142338e8,#0d1828ee);border:1px solid #263750cc;padding:18px;border-radius:16px;box-shadow:0 14px 40px #0005}}.viewer{{padding:10px}}.viewer-head{{display:flex;justify-content:space-between;align-items:center;padding:8px 8px 14px}}.fps{{font:12px ui-monospace;color:var(--cyan);background:#0b2b30;padding:5px 8px;border-radius:7px}}
-.view{{display:block;width:100%;aspect-ratio:{render_width}/{render_height};object-fit:contain;background:#02060c;border:1px solid #2a3d58;border-radius:11px}}.toolbar{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px 4px 2px}}label{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;margin:15px 0;color:#c9d7e8}}output{{min-width:64px;text-align:center;font:600 12px ui-monospace;background:#213753;border:1px solid #345070;padding:4px 7px;border-radius:7px}}input[type=range]{{grid-column:1/-1;width:100%;height:5px;appearance:none;background:#263a55;border-radius:9px}}input[type=range]::-webkit-slider-thumb{{appearance:none;width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,var(--cyan),var(--blue));border:2px solid #e7fbff}}select{{width:100%;color:var(--text);background:#172941;border:1px solid #334b69;border-radius:9px;padding:9px}}
+.view{{display:block;width:100%;aspect-ratio:{render_width}/{render_height};object-fit:contain;background:#02060c;border:1px solid #2a3d58;border-radius:11px;cursor:grab;user-select:none;-webkit-user-drag:none;touch-action:none}}.view.dragging{{cursor:grabbing}}.camera-help{{padding:7px 9px 0;color:var(--muted);font-size:12px}}.toolbar{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px 4px 2px}}label{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;margin:15px 0;color:#c9d7e8}}output{{min-width:64px;text-align:center;font:600 12px ui-monospace;background:#213753;border:1px solid #345070;padding:4px 7px;border-radius:7px}}input[type=range]{{grid-column:1/-1;width:100%;height:5px;appearance:none;background:#263a55;border-radius:9px}}input[type=range]::-webkit-slider-thumb{{appearance:none;width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,var(--cyan),var(--blue));border:2px solid #e7fbff}}select{{width:100%;color:var(--text);background:#172941;border:1px solid #334b69;border-radius:9px;padding:9px}}
 .actions{{display:flex;flex-wrap:wrap;gap:9px;margin-top:18px;padding:16px;background:#0c1726aa;border:1px solid var(--line);border-radius:15px}}button{{border:1px solid #42648b;background:#284b70;color:#f7fbff;padding:10px 14px;border-radius:9px;font-weight:650;cursor:pointer}}button.secondary{{background:#182a40}}button.warn{{background:#705229}}button.danger{{background:#9d3040}}.keys{{color:var(--muted);font-size:12px}}kbd{{font:11px ui-monospace;background:#1b2b40;border:1px solid #3a506c;border-radius:5px;padding:2px 6px}}
-@media(max-width:900px){{.layout,.parameter-grid{{grid-template-columns:1fr}}}}
+.telemetry{{margin-top:18px}}.telemetry-head{{display:flex;align-items:center;justify-content:space-between;gap:12px}}.telemetry-head h2{{margin:0}}.telemetry-tools{{display:flex;gap:8px}}.telemetry-tools button{{padding:6px 10px;font-size:12px}}.telemetry-grid{{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px;margin-top:15px}}.chart{{background:#081321;border:1px solid #263b55;border-radius:11px;padding:10px;min-width:0}}.chart-title{{display:flex;justify-content:space-between;color:#bcd0e7;font-size:12px;margin-bottom:6px}}.chart-value{{font:700 12px ui-monospace}}.chart canvas{{display:block;width:100%;height:112px}}
+@media(max-width:1100px){{.telemetry-grid{{grid-template-columns:repeat(2,minmax(180px,1fr))}}}}@media(max-width:900px){{.layout,.parameter-grid{{grid-template-columns:1fr}}}}@media(max-width:560px){{.telemetry-grid{{grid-template-columns:1fr}}}}
 </style><main><header class="topbar"><div class="brand"><small>ROBOTICS CONTROL CENTER</small><h1>{safe_title}</h1></div><div class="live"><i class="dot"></i>SIM LIVE</div></header>
-<div class="layout"><div class="stack"><section class="viewer"><div class="viewer-head"><h2>MUJOCO 实时画面</h2><span class="fps">TARGET {fps:g} FPS</span></div><img class="view" id="simview"><div class="toolbar"><label id="maprow" hidden><span>地图</span><select id="mapselect"></select></label><label id="camerarow" hidden><span>视角</span><select id="cameraselect"></select></label></div></section><div class="parameter-grid"><section><h2>{GROUP_TITLES['commands']}</h2><div id="commands"></div></section><section><h2>{GROUP_TITLES['control']}</h2><div id="control"></div></section></div></div><aside><section><h2>{GROUP_TITLES['model']}</h2><div id="model"></div></section></aside></div>
+<div class="layout"><div class="stack"><section class="viewer"><div class="viewer-head"><h2>MUJOCO 实时画面</h2><span class="fps">TARGET {fps:g} FPS</span></div><img class="view" id="simview" draggable="false"><div class="camera-help">左键拖动：旋转　右键拖动：平移　滚轮：缩放</div><div class="toolbar"><label id="maprow" hidden><span>地图</span><select id="mapselect"></select></label><label id="camerarow" hidden><span>视角</span><select id="cameraselect"></select></label></div></section><div class="parameter-grid"><section><h2>{GROUP_TITLES['commands']}</h2><div id="commands"></div></section><section><h2>{GROUP_TITLES['control']}</h2><div id="control"></div></section></div></div><aside><section><h2>{GROUP_TITLES['model']}</h2><div id="model"></div></section></aside></div>
+<section class="telemetry"><div class="telemetry-head"><h2>◇ 实时曲线监控</h2><div class="telemetry-tools"><button class="secondary" id="pauseTelemetry">暂停</button><button class="secondary" onclick="clearTelemetry()">清空</button></div></div><div class="telemetry-grid" id="telemetryGrid"></div></section>
 <div class="actions"><button onclick="action('randomize')">⚔ 一键随机化</button><button class="secondary" onclick="action('nominal')">恢复标称</button><button class="warn" onclick="action('push')">随机推力</button><button class="secondary" onclick="action('reset')">重置机器人</button>{snapshot_buttons}{custom_buttons}<button class="danger" onclick="action('stop')">急停</button><button class="secondary" onclick="closePanel()">关闭页面</button></div><p class="keys">键盘：<kbd>W/S</kbd> 前后　<kbd>A/D</kbd> 横向　<kbd>Q/E</kbd> 转向</p>
-<script>const specs={schema_json},maps={maps_json},cameras={cameras_json},customActions={actions_json};
+<script>const specs={schema_json},maps={maps_json},cameras={cameras_json},customActions={actions_json},telemetrySpecs={telemetry_json};
 for(const [group,items] of Object.entries(specs))for(const [key,name,min,max,step] of items){{const root=document.getElementById(group);if(!root)continue;let l=document.createElement('label');l.innerHTML=`<span>${{name}}</span><output id="o_${{key}}"></output><input id="${{key}}" type="range" min="${{min}}" max="${{max}}" step="${{step}}">`;root.append(l);let i=l.lastChild;i.onpointerdown=()=>i.dragging=true;i.onpointerup=i.onpointercancel=()=>i.dragging=false;i.oninput=()=>{{document.getElementById('o_'+key).value=i.value;send({{[key]:+i.value}})}}}}
 let timer;function send(v){{clearTimeout(timer);timer=setTimeout(()=>fetch('/api/state',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(v)}}),35)}}function action(name){{fetch('/api/action',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{action:name}})}})}}
 function refresh(){{fetch('/api/state').then(r=>r.json()).then(s=>{{for(const[k,v]of Object.entries(s)){{let i=document.getElementById(k);if(i&&!i.dragging){{i.value=v;document.getElementById('o_'+k).value=v}}}}}})}}refresh();setInterval(refresh,150);
+const telemetryGrid=document.getElementById('telemetryGrid'),charts=new Map();let telemetryPaused=false;for(const spec of telemetrySpecs){{let card=document.createElement('div');card.className='chart';card.innerHTML=`<div class="chart-title"><span>${{spec.label}} (${{spec.unit||'-'}})</span><span class="chart-value">--</span></div><canvas></canvas>`;telemetryGrid.append(card);charts.set(spec.key,{{spec,card,canvas:card.querySelector('canvas')}})}}
+function drawChart(chart,points){{const canvas=chart.canvas,dpr=devicePixelRatio||1,w=Math.max(120,canvas.clientWidth),h=Math.max(80,canvas.clientHeight);if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){{canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)}}const c=canvas.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);c.strokeStyle='#20344d';c.lineWidth=1;for(let i=1;i<4;i++){{let y=i*h/4;c.beginPath();c.moveTo(0,y);c.lineTo(w,y);c.stroke()}}if(!points.length)return;let values=points.map(p=>p.v),lo=Math.min(...values),hi=Math.max(...values);if(lo===hi){{lo-=Math.max(.01,Math.abs(lo)*.05);hi+=Math.max(.01,Math.abs(hi)*.05)}}let pad=(hi-lo)*.08;lo-=pad;hi+=pad;c.strokeStyle=chart.spec.color;c.lineWidth=2;c.beginPath();points.forEach((p,i)=>{{let x=points.length===1?w:w*i/(points.length-1),y=h-(p.v-lo)/(hi-lo)*h;i?c.lineTo(x,y):c.moveTo(x,y)}});c.stroke();c.fillStyle='#7890aa';c.font='10px ui-monospace';c.fillText(hi.toFixed(2),4,11);c.fillText(lo.toFixed(2),4,h-4);chart.card.querySelector('.chart-value').textContent=values[values.length-1].toFixed(3)+(chart.spec.unit?' '+chart.spec.unit:'')}}
+async function refreshTelemetry(){{if(telemetryPaused)return;try{{let payload=await fetch('/api/telemetry').then(r=>r.json());for(const[key,chart]of charts){{let points=payload.points.filter(p=>Object.prototype.hasOwnProperty.call(p.values,key)).map(p=>({{t:p.time,v:p.values[key]}}));drawChart(chart,points)}}}}catch(e){{}}}}function clearTelemetry(){{fetch('/api/telemetry/reset',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:'{{}}'}});for(const chart of charts.values()){{drawChart(chart,[]);chart.card.querySelector('.chart-value').textContent='--'}}}}document.getElementById('pauseTelemetry').onclick=e=>{{telemetryPaused=!telemetryPaused;e.currentTarget.textContent=telemetryPaused?'继续':'暂停';if(!telemetryPaused)refreshTelemetry()}};refreshTelemetry();setInterval(refreshTelemetry,200);addEventListener('resize',refreshTelemetry);
 const mapselect=document.getElementById('mapselect');if(Object.keys(maps).length){{document.getElementById('maprow').hidden=false;for(const[k,v]of Object.entries(maps)){{let o=document.createElement('option');o.value=k;o.textContent=v;mapselect.append(o)}}mapselect.onchange=()=>{{releaseMotionKeys();fetch('/api/map',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{map:mapselect.value}})}})}};setInterval(()=>fetch('/api/map').then(r=>r.json()).then(s=>mapselect.value=s.map),300)}}
-const cameraselect=document.getElementById('cameraselect');if(Object.keys(cameras).length){{document.getElementById('camerarow').hidden=false;for(const[k,v]of Object.entries(cameras)){{let o=document.createElement('option');o.value=k;o.textContent=v;cameraselect.append(o)}}cameraselect.onchange=()=>{{releaseMotionKeys();fetch('/api/camera',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{camera:cameraselect.value}})}})}};setInterval(()=>fetch('/api/camera').then(r=>r.json()).then(s=>cameraselect.value=s.camera),300)}}
+const cameraselect=document.getElementById('cameraselect');if(Object.keys(cameras).length){{document.getElementById('camerarow').hidden=false;for(const[k,v]of Object.entries(cameras)){{let o=document.createElement('option');o.value=k;o.textContent=v;cameraselect.append(o)}}let free=document.createElement('option');free.value='free';free.textContent='鼠标自由视角';cameraselect.append(free);cameraselect.onchange=()=>{{releaseMotionKeys();fetch('/api/camera',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{camera:cameraselect.value}})}})}};setInterval(()=>fetch('/api/camera').then(r=>r.json()).then(s=>cameraselect.value=s.camera),300)}}
 const view=document.getElementById('simview');function connectFrameStream(){{view.src='/api/stream.mjpg?t='+Date.now()}}view.onerror=()=>setTimeout(connectFrameStream,250);connectFrameStream();
+let cameraDrag=null,pendingCamera=null,cameraFrame=0;function sendCameraMove(move){{pendingCamera=move;if(cameraFrame)return;cameraFrame=requestAnimationFrame(()=>{{cameraFrame=0;let current=pendingCamera;pendingCamera=null;fetch('/api/camera_move',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(current)}})}})}}view.oncontextmenu=e=>e.preventDefault();view.onpointerdown=e=>{{if(e.button!==0&&e.button!==2)return;e.preventDefault();view.setPointerCapture(e.pointerId);cameraDrag={{x:e.clientX,y:e.clientY,button:e.button}};view.classList.add('dragging')}};view.onpointermove=e=>{{if(!cameraDrag)return;let dx=(e.clientX-cameraDrag.x)/Math.max(1,view.clientWidth),dy=(e.clientY-cameraDrag.y)/Math.max(1,view.clientHeight);cameraDrag.x=e.clientX;cameraDrag.y=e.clientY;if(dx||dy)sendCameraMove({{action:cameraDrag.button===0?'rotate':'pan',dx,dy}})}};view.onpointerup=view.onpointercancel=()=>{{cameraDrag=null;view.classList.remove('dragging')}};view.addEventListener('wheel',e=>{{e.preventDefault();sendCameraMove({{action:'zoom',dx:0,dy:Math.sign(e.deltaY)*0.12}})}},{{passive:false}});
 const motionKeys=new Set(['w','s','a','d','q','e']),keyAliases={{arrowup:'w',arrowdown:'s',arrowleft:'a',arrowright:'d'}},actionKeys=new Map(Object.entries(customActions).filter(([k,v])=>v.shortcut).map(([k,v])=>[v.shortcut,k]));function normalizedKey(e){{let k=e.key.toLowerCase();return keyAliases[k]||k}}function sendKey(key,pressed){{fetch('/api/key',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{key,pressed}})}})}}function releaseMotionKeys(){{for(const k of motionKeys)sendKey(k,false)}}function captureKey(e,pressed){{const k=normalizedKey(e);if(motionKeys.has(k)){{e.preventDefault();if(!e.repeat||!pressed)sendKey(k,pressed);return}}if(pressed&&!e.repeat&&actionKeys.has(k)){{e.preventDefault();action(actionKeys.get(k))}}}}addEventListener('keydown',e=>captureKey(e,true),true);addEventListener('keyup',e=>captureKey(e,false),true);addEventListener('blur',releaseMotionKeys);document.addEventListener('visibilitychange',()=>{{if(document.hidden)releaseMotionKeys()}});
 async function closePanel(){{releaseMotionKeys();try{{await fetch('/api/action',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{action:'close_panel'}})}})}}catch(e){{}}window.close()}}
 </script></main></html>"""
@@ -239,11 +283,16 @@ class RuntimeControlPanel:
         self.cameras = dict(ui_config.get("cameras", {}))
         self.selected_camera = ui_config.get("default_camera", next(iter(self.cameras), None))
         self.pending_camera = None
+        self.camera_moves = []
         self.stop_on_panel_close = bool(ui_config.get("stop_on_panel_close", True))
         self.stop_event = threading.Event()
         self.lock = threading.RLock()
         self.frame_condition = threading.Condition(self.lock)
         self.frame_bytes, self.frame_sequence = None, 0
+        self.telemetry_specs = normalize_telemetry(ui_config.get("telemetry"))
+        self.telemetry_keys = {item["key"] for item in self.telemetry_specs}
+        self.telemetry_max_points = max(10, int(ui_config.get("telemetry_max_points", 300)))
+        self.telemetry_points = []
         self.last_frame_request = 0.0
         self._browser_lock = threading.Lock()
         self._browser_process = None
@@ -256,6 +305,7 @@ class RuntimeControlPanel:
             title, self.schema, fps, self.maps, self.cameras,
             self.custom_actions, self.snapshot_path is not None,
             ui_config.get("width", 640), ui_config.get("height", 480),
+            self.telemetry_specs,
         )
         self._start_server(ui_config)
         atexit.register(self.close)
@@ -275,11 +325,14 @@ class RuntimeControlPanel:
         class Handler(BaseHTTPRequestHandler):
             def reply_json(self, payload, status=200):
                 body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                try:
+                    self.send_response(status)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
 
             def reply_error(self, status, message):
                 self.reply_json({"ok": False, "error": message}, status)
@@ -300,6 +353,11 @@ class RuntimeControlPanel:
                     with panel.lock:
                         selected = panel.selected_camera
                     self.reply_json({"camera": selected})
+                    return
+                if path == "/api/telemetry":
+                    with panel.lock:
+                        payload = {"series": list(panel.telemetry_specs), "points": list(panel.telemetry_points)}
+                    self.reply_json(payload)
                     return
                 if path == "/api/stream.mjpg":
                     self._stream_frames()
@@ -427,12 +485,24 @@ class RuntimeControlPanel:
                     self.pending_map = selected
             elif path == "/api/camera":
                 selected = str(payload.get("camera", ""))
-                if selected not in self.cameras:
+                if selected not in self.cameras and selected != "free":
                     raise ValueError("unknown camera: %s" % selected)
                 self.pressed_keys.clear()
                 if selected != self.selected_camera:
                     self.selected_camera = selected
                     self.pending_camera = selected
+            elif path == "/api/camera_move":
+                action = str(payload.get("action", ""))
+                if action not in {"rotate", "pan", "zoom"}:
+                    raise ValueError("unknown camera movement: %s" % action)
+                dx = float(payload.get("dx", 0.0))
+                dy = float(payload.get("dy", 0.0))
+                if not math.isfinite(dx) or not math.isfinite(dy):
+                    raise ValueError("camera movement must be finite")
+                dx = min(1.0, max(-1.0, dx))
+                dy = min(1.0, max(-1.0, dy))
+                self.selected_camera = "free"
+                self.camera_moves.append((action, dx, dy))
             elif path == "/api/key":
                 key = str(payload.get("key", "")).lower()
                 if key not in MOTION_KEYS:
@@ -446,9 +516,30 @@ class RuntimeControlPanel:
                     if key not in self.state:
                         raise ValueError("unknown runtime parameter: %s" % key)
                     self.state[key] = self._bounded_value(key, value)
+            elif path == "/api/telemetry/reset":
+                self.telemetry_points.clear()
             else:
                 return None
         return close_requested
+
+    def publish_telemetry(self, values, timestamp=None):
+        """Append one validated sample to the real-time curve history."""
+        clean = {}
+        for key, value in dict(values).items():
+            if key not in self.telemetry_keys:
+                continue
+            number = float(value)
+            if math.isfinite(number):
+                clean[key] = number
+        sample_time = time.monotonic() if timestamp is None else float(timestamp)
+        if not math.isfinite(sample_time):
+            raise ValueError("telemetry timestamp must be finite")
+        if not clean:
+            return
+        with self.lock:
+            self.telemetry_points.append({"time": sample_time, "values": clean})
+            if len(self.telemetry_points) > self.telemetry_max_points:
+                del self.telemetry_points[:-self.telemetry_max_points]
 
     def open_browser(self):
         """Open an isolated app window that can be closed independently."""
@@ -539,6 +630,13 @@ class RuntimeControlPanel:
         with self.lock:
             selected, self.pending_camera = self.pending_camera, None
             return selected
+
+    def consume_camera_moves(self):
+        """Return and clear normalized browser mouse camera movements."""
+        with self.lock:
+            moves = list(self.camera_moves)
+            self.camera_moves.clear()
+            return moves
 
     def randomize(self):
         with self.lock:

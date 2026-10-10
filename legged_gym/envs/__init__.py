@@ -34,6 +34,8 @@ from .base.legged_robot import LeggedRobot
 
 
 from legged_gym.envs.w1w import WheeledLeggedRobot, W1WRoughCfg, W1WRoughCfgPPO
+from legged_gym.envs.yqz_000 import YQZ000RoughCfg, YQZ000RoughCfgPPO
+from legged_gym.envs.yqz_high import YQZHighRobot, YQZHighCfg, YQZHighCfgPPO
 
 import os
 
@@ -41,4 +43,10 @@ from legged_gym.utils.task_registry import task_registry
 
 task_registry.register(
     "w1w", WheeledLeggedRobot, W1WRoughCfg(), W1WRoughCfgPPO()
+)
+task_registry.register(
+    "yqz_000", WheeledLeggedRobot, YQZ000RoughCfg(), YQZ000RoughCfgPPO()
+)
+task_registry.register(
+    "yqz_high", YQZHighRobot, YQZHighCfg(), YQZHighCfgPPO()
 )

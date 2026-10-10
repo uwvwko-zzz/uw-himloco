@@ -26,7 +26,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/base_link.STL" />
+          filename="../meshes/base_link.STL" />
       </geometry>
       <material
         name="">
@@ -61,7 +61,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/FL_hip_Link.STL" />
+          filename="../meshes/FL_hip_Link.STL" />
       </geometry>
       <material
         name="">
@@ -89,8 +89,8 @@
     <limit
       lower="-0.8203047484373349"
       upper="0.5585053606381855"
-      effort="0"
-      velocity="0" />
+      effort="60"
+      velocity="30" />
   </joint>
   <link
     name="FL_thigh_Link">
@@ -114,7 +114,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/FL_thigh_Link.STL" />
+          filename="../meshes/FL_thigh_Link.STL" />
       </geometry>
       <material
         name="">
@@ -142,8 +142,8 @@
     <limit
       lower="-2.357939819444339"
       upper="0.8691739674931761"
-      effort="1"
-      velocity="1" />
+      effort="60"
+      velocity="30" />
   </joint>
   <link
     name="FL_calf_Link">
@@ -167,7 +167,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/FL_calf_Link.STL" />
+          filename="../meshes/FL_calf_Link.STL" />
       </geometry>
       <material
         name="">
@@ -195,8 +195,8 @@
     <limit
       lower="0"
       upper="3.9461894387591787"
-      effort="1"
-      velocity="1" />
+      effort="120"
+      velocity="30" />
   </joint>
   <link
     name="FL_foot_Link">
@@ -220,7 +220,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/FL_foot_Link.STL" />
+          filename="../meshes/FL_foot_Link.STL" />
       </geometry>
       <material
         name="">
@@ -235,7 +235,7 @@
   </link>
   <joint
     name="FL_foot_joint"
-    type="continuous">
+    type="revolute">
     <origin
       xyz="0.016 0.062332 -0.24949"
       rpy="0 0 0" />
@@ -245,6 +245,7 @@
       link="FL_foot_Link" />
     <axis
       xyz="0 -1 0" />
+    <limit lower="-9999" upper="9999" effort="17" velocity="50" />
   </joint>
   <link
     name="FR_hip_Link">
@@ -268,7 +269,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/FR_hip_Link.STL" />
+          filename="../meshes/FR_hip_Link.STL" />
       </geometry>
       <material
         name="">
@@ -296,8 +297,8 @@
     <limit
       lower="-0.5585053606381855"
       upper="0.8203047484373349"
-      effort="1"
-      velocity="1" />
+      effort="60"
+      velocity="30" />
   </joint>
   <link
     name="FR_thigh_Link">
@@ -321,7 +322,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/FR_thigh_Link.STL" />
+          filename="../meshes/FR_thigh_Link.STL" />
       </geometry>
       <material
         name="">
@@ -349,8 +350,8 @@
     <limit
       lower="-0.8691739674931761"
       upper="2.357939819444339"
-      effort="0"
-      velocity="0" />
+      effort="60"
+      velocity="30" />
   </joint>
   <link
     name="FR_calf_Link">
@@ -374,7 +375,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/FR_calf_Link.STL" />
+          filename="../meshes/FR_calf_Link.STL" />
       </geometry>
       <material
         name="">
@@ -402,8 +403,8 @@
     <limit
       lower="-3.9461894387591787"
       upper="0"
-      effort="1"
-      velocity="1" />
+      effort="120"
+      velocity="30" />
   </joint>
   <link
     name="FR_foot_Link">
@@ -427,7 +428,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/FR_foot_Link.STL" />
+          filename="../meshes/FR_foot_Link.STL" />
       </geometry>
       <material
         name="">
@@ -442,7 +443,7 @@
   </link>
   <joint
     name="FR_foot_joint"
-    type="continuous">
+    type="revolute">
     <origin
       xyz="0.016 -0.062332 -0.24949"
       rpy="0 0 0" />
@@ -452,6 +453,7 @@
       link="FR_foot_Link" />
     <axis
       xyz="0 1 0" />
+    <limit lower="-9999" upper="9999" effort="17" velocity="50" />
   </joint>
   <link
     name="RL_hip_Link">
@@ -475,7 +477,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/RL_hip_Link.STL" />
+          filename="../meshes/RL_hip_Link.STL" />
       </geometry>
       <material
         name="">
@@ -503,8 +505,8 @@
     <limit
       lower="-0.5585053606381855"
       upper="0.8203047484373349"
-      effort="1"
-      velocity="1" />
+      effort="60"
+      velocity="30" />
   </joint>
   <link
     name="RL_thigh_Link">
@@ -528,7 +530,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/RL_thigh_Link.STL" />
+          filename="../meshes/RL_thigh_Link.STL" />
       </geometry>
       <material
         name="">
@@ -556,8 +558,8 @@
     <limit
       lower="-0.8691739674931761"
       upper="2.357939819444339"
-      effort="0"
-      velocity="0" />
+      effort="60"
+      velocity="30" />
   </joint>
   <link
     name="RL_calf_Link">
@@ -581,7 +583,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/RL_calf_Link.STL" />
+          filename="../meshes/RL_calf_Link.STL" />
       </geometry>
       <material
         name="">
@@ -609,8 +611,8 @@
     <limit
       lower="-3.9461894387591787"
       upper="0"
-      effort="1"
-      velocity="1" />
+      effort="120"
+      velocity="30" />
   </joint>
   <link
     name="RL_foot_Link">
@@ -634,7 +636,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/RL_foot_Link.STL" />
+          filename="../meshes/RL_foot_Link.STL" />
       </geometry>
       <material
         name="">
@@ -649,7 +651,7 @@
   </link>
   <joint
     name="RL_foot_joint"
-    type="continuous">
+    type="revolute">
     <origin
       xyz="-0.016 0.062332 -0.24949"
       rpy="0 0 0" />
@@ -659,6 +661,7 @@
       link="RL_foot_Link" />
     <axis
       xyz="0 -1 0" />
+    <limit lower="-9999" upper="9999" effort="17" velocity="50" />
   </joint>
   <link
     name="RR_hip_Link">
@@ -682,7 +685,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/RR_hip_Link.STL" />
+          filename="../meshes/RR_hip_Link.STL" />
       </geometry>
       <material
         name="">
@@ -710,8 +713,8 @@
     <limit
       lower="-0.8203047484373349"
       upper="0.5585053606381855"
-      effort="0"
-      velocity="0" />
+      effort="60"
+      velocity="30" />
   </joint>
   <link
     name="RR_thigh_Link">
@@ -735,7 +738,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/RR_thigh_Link.STL" />
+          filename="../meshes/RR_thigh_Link.STL" />
       </geometry>
       <material
         name="">
@@ -763,8 +766,8 @@
     <limit
       lower="-2.357939819444339"
       upper="0.8691739674931761"
-      effort="1"
-      velocity="1" />
+      effort="60"
+      velocity="30" />
   </joint>
   <link
     name="RR_calf_Link">
@@ -788,7 +791,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/RR_calf_Link.STL" />
+          filename="../meshes/RR_calf_Link.STL" />
       </geometry>
       <material
         name="">
@@ -816,8 +819,8 @@
     <limit
       lower="0"
       upper="3.9461894387591787"
-      effort="1"
-      velocity="1" />
+      effort="120"
+      velocity="30" />
   </joint>
   <link
     name="RR_foot_Link">
@@ -841,7 +844,7 @@
         rpy="0 0 0" />
       <geometry>
         <mesh
-          filename="package://YQZ-000/meshes/RR_foot_Link.STL" />
+          filename="../meshes/RR_foot_Link.STL" />
       </geometry>
       <material
         name="">
@@ -856,7 +859,7 @@
   </link>
   <joint
     name="RR_foot_joint"
-    type="continuous">
+    type="revolute">
     <origin
       xyz="-0.016 -0.062332 -0.24949"
       rpy="0 0 0" />
@@ -866,5 +869,6 @@
       link="RR_foot_Link" />
     <axis
       xyz="0 1 0" />
+    <limit lower="-9999" upper="9999" effort="17" velocity="50" />
   </joint>
 </robot>

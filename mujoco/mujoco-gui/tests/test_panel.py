@@ -65,6 +65,33 @@ class PanelTests(unittest.TestCase):
         self.assertTrue(panel.stop_event.wait(2.0))
         self.assertFalse(panel.is_running())
 
+    def test_camera_mouse_movement_is_validated_and_consumed(self):
+        panel = self.make_panel()
+        self.post(panel, "/api/camera_move", {
+            "action": "rotate", "dx": 0.25, "dy": -0.1,
+        })
+        self.assertEqual(panel.selected_camera, "free")
+        self.assertEqual(panel.consume_camera_moves(), [("rotate", 0.25, -0.1)])
+        self.assertEqual(panel.consume_camera_moves(), [])
+        with self.assertRaises(HTTPError) as error:
+            self.post(panel, "/api/camera_move", {"action": "teleport"})
+        self.assertEqual(error.exception.code, 400)
+        panel.close()
+
+    def test_telemetry_endpoint_limit_and_reset(self):
+        panel = self.make_panel()
+        panel.telemetry_max_points = 2
+        panel.publish_telemetry({"base_height": 0.4, "unknown": 9}, 1.0)
+        panel.publish_telemetry({"base_height": 0.5}, 2.0)
+        panel.publish_telemetry({"base_height": 0.6}, 3.0)
+        payload = json.loads(urlopen(panel.url + "/api/telemetry", timeout=2).read())
+        self.assertEqual([p["time"] for p in payload["points"]], [2.0, 3.0])
+        self.assertNotIn("unknown", payload["points"][-1]["values"])
+        self.post(panel, "/api/telemetry/reset", {})
+        payload = json.loads(urlopen(panel.url + "/api/telemetry", timeout=2).read())
+        self.assertEqual(payload["points"], [])
+        panel.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -78,7 +78,9 @@ class Terrain:
             (i, j) = np.unravel_index(k, (self.cfg.num_rows, self.cfg.num_cols))
             terrain = terrain_utils.SubTerrain(
                 "terrain",
-                width=self.width_per_env_pixels,
+                # Isaac Gym stores SubTerrain as (width, length), while the
+                # global map uses its first axis for env_length (world X).
+                width=self.length_per_env_pixels,
                 length=self.width_per_env_pixels,
                 vertical_scale=self.cfg.vertical_scale,      
                 horizontal_scale=self.cfg.horizontal_scale   
@@ -99,7 +101,7 @@ class Terrain:
 
     def make_terrain(self, choice, difficulty):
         terrain = terrain_utils.SubTerrain(   "terrain",
-                                width=self.width_per_env_pixels,
+                                width=self.length_per_env_pixels,
                                 length=self.width_per_env_pixels,
                                 vertical_scale=self.cfg.vertical_scale,
                                 horizontal_scale=self.cfg.horizontal_scale)
@@ -112,6 +114,25 @@ class Terrain:
         difficulty_ratio = np.clip(
             difficulty / max_curriculum_difficulty, 0.0, 1.0
         )
+
+        # A dedicated single-step platform used by wheel-legged climbing
+        # tasks.  Keeping it behind an explicit config switch avoids changing
+        # the terrain distribution of existing locomotion experiments.
+        if getattr(self.cfg, "terrain_type", "") == "high_platform":
+            if getattr(self.cfg, "reverse_platform_order", False):
+                difficulty_ratio = 1.0 - difficulty_ratio
+            min_height = self.cfg.min_platform_height
+            platform_height = min_height + difficulty_ratio * (
+                self.cfg.max_platform_height - min_height
+            )
+            high_platform_terrain(
+                terrain,
+                platform_height=platform_height,
+                platform_start_x=self.cfg.platform_start_x,
+                platform_half_width=self.cfg.platform_half_width,
+                platform_length=getattr(self.cfg, "platform_length", None),
+            )
+            return terrain
 
         if hasattr(self.cfg, "max_slope_angle_deg"):
             slope = difficulty_ratio * np.tan(
@@ -198,25 +219,61 @@ class Terrain:
         #     t_shaped_stairs_terrain(terrain, horizontal_scale=self.cfg.horizontal_scale, vertical_scale=self.cfg.vertical_scale)
         return terrain
 
-# 添加地形
+    # Add one generated sub-terrain to the global height field.
     def add_terrain_to_map(self, terrain, row, col):
         i = row
         j = col
-        # map coordinate system
         start_x = self.border + i * self.length_per_env_pixels
         end_x = self.border + (i + 1) * self.length_per_env_pixels
         start_y = self.border + j * self.width_per_env_pixels
         end_y = self.border + (j + 1) * self.width_per_env_pixels
-        self.height_field_raw[start_x: end_x, start_y:end_y] = terrain.height_field_raw
+        self.height_field_raw[start_x:end_x, start_y:end_y] = terrain.height_field_raw
 
         env_origin_x = (i + 0.5) * self.env_length
         env_origin_y = (j + 0.5) * self.env_width
-        x1 = int((self.env_length/2. - 1) / terrain.horizontal_scale)
-        x2 = int((self.env_length/2. + 1) / terrain.horizontal_scale)
-        y1 = int((self.env_width/2. - 1) / terrain.horizontal_scale)
-        y2 = int((self.env_width/2. + 1) / terrain.horizontal_scale)
-        env_origin_z = np.max(terrain.height_field_raw[x1:x2, y1:y2])*terrain.vertical_scale
+        x1 = int((self.env_length / 2.0 - 1) / terrain.horizontal_scale)
+        x2 = int((self.env_length / 2.0 + 1) / terrain.horizontal_scale)
+        y1 = int((self.env_width / 2.0 - 1) / terrain.horizontal_scale)
+        y2 = int((self.env_width / 2.0 + 1) / terrain.horizontal_scale)
+        if getattr(self.cfg, "terrain_type", "") == "high_platform":
+            # The spawn is on the flat approach, not on the platform top.
+            # Compact demo ledges may overlap the generic +/-1 m origin probe.
+            env_origin_z = 0.0
+        else:
+            env_origin_z = (
+                np.max(terrain.height_field_raw[x1:x2, y1:y2])
+                * terrain.vertical_scale
+            )
         self.env_origins[i, j] = [env_origin_x, env_origin_y, env_origin_z]
+
+
+def high_platform_terrain(
+    terrain,
+    platform_height,
+    platform_start_x=1.5,
+    platform_half_width=2.0,
+    platform_length=None,
+):
+    """Create a flat approach followed by one wide, raised platform.
+
+    ``platform_start_x`` is measured forward from the centre/spawn point of
+    the sub-terrain. ``platform_length=None`` keeps the original behaviour of
+    extending to the positive-X boundary.
+    """
+    terrain.height_field_raw[:] = 0
+    center_x = terrain.width // 2
+    center_y = terrain.length // 2
+    start_x = center_x + int(round(platform_start_x / terrain.horizontal_scale))
+    half_width = int(round(platform_half_width / terrain.horizontal_scale))
+    y0 = max(0, center_y - half_width)
+    y1 = min(terrain.length, center_y + half_width)
+    if platform_length is None:
+        end_x = terrain.width
+    else:
+        length = max(1, int(round(platform_length / terrain.horizontal_scale)))
+        end_x = min(terrain.width, start_x + length)
+    height_raw = int(round(platform_height / terrain.vertical_scale))
+    terrain.height_field_raw[start_x:end_x, y0:y1] = height_raw
 
 
 

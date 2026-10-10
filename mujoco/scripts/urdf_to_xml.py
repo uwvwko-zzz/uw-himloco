@@ -260,6 +260,8 @@ def build_body(parent_elem, link_name, link_elem, parent_joint,
         gtype, size, mesh_name = geometry_to_mjcf(geom_elem)
         if gtype is None:
             continue
+        if settings.get("collision_only") and gtype == "mesh":
+            continue
         g = ET.SubElement(body, "geom")
         if gtype == "mesh":
             g.set("type", "mesh")
@@ -292,9 +294,12 @@ def build_body(parent_elem, link_name, link_elem, parent_joint,
             g.set("type", gtype)
             g.set("size", fmt_vec(size))
         set_pos_quat(g, *parse_origin(collision.find("origin")))
-        # 碰撞默认隐藏 (alpha=0)
+        # 碰撞默认隐藏；collision-only 模式下同时作为可视外形。
         rgba = visual_color(collision, materials)
-        g.set("rgba", hide(rgba) if rgba else "0.5 0.5 0.5 0")
+        if settings.get("collision_only"):
+            g.set("rgba", "0.35 0.45 0.65 1")
+        else:
+            g.set("rgba", hide(rgba) if rgba else "0.5 0.5 0.5 0")
 
     # 递归子 body
     for child_joint in children_of.get(link_name, []):
@@ -326,7 +331,7 @@ def build_mjcf(urdf_root, robot_name, links, joints, parent_of, children_of, bas
     # compiler
     ET.SubElement(mujoco_elem, "compiler", {
         "angle": "radian",
-        "meshdir": "../meshes/",
+        "meshdir": settings["meshdir"],
     })
 
     # size
@@ -369,9 +374,10 @@ def build_mjcf(urdf_root, robot_name, links, joints, parent_of, children_of, bas
         "name": "plane", "reflectance": "0.0",
         "texture": "plane", "texrepeat": "3 3", "texuniform": "true",
     })
-    for mesh_file in collect_meshes(links):
-        name = mesh_file.replace(".STL", "").replace(".stl", "").replace(".obj", "")
-        ET.SubElement(asset, "mesh", {"name": name, "file": mesh_file})
+    if not settings.get("collision_only"):
+        for mesh_file in collect_meshes(links):
+            name = mesh_file.replace(".STL", "").replace(".stl", "").replace(".obj", "")
+            ET.SubElement(asset, "mesh", {"name": name, "file": mesh_file})
 
     # visual
     visual = ET.SubElement(mujoco_elem, "visual")
@@ -473,10 +479,19 @@ def main():
                         help="base 初始高度 (m), 默认 0.45")
     parser.add_argument("--effort-mult", type=float, default=1.0,
                         help="ctrlrange = URDF effort × 此系数, 默认 1.0")
+    parser.add_argument("--collision-only", action="store_true",
+                        help="跳过高模视觉 mesh，仅使用碰撞几何")
+    parser.add_argument("--meshdir", default="../meshes/",
+                        help="MJCF compiler meshdir，默认 ../meshes/")
     args = parser.parse_args()
 
     urdf_root, robot_name, links, joints, parent_of, children_of, base_link = parse_urdf(args.urdf)
-    settings = {"spawn_height": args.spawn, "effort_mult": args.effort_mult}
+    settings = {
+        "spawn_height": args.spawn,
+        "effort_mult": args.effort_mult,
+        "collision_only": args.collision_only,
+        "meshdir": args.meshdir,
+    }
     mjcf = build_mjcf(urdf_root, robot_name, links, joints, parent_of, children_of,
                       base_link, settings)
 
